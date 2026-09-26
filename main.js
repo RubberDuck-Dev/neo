@@ -186,7 +186,7 @@ async function libraryGitStatus() {
       runGit(['remote', 'get-url', 'origin']).catch(() => ({ stdout: '' })),
       runGit(['status', '--porcelain'])
     ]);
-    return { available: true, initialized: true, branch: branch.stdout || 'main', remote: remote.stdout || null, clean: !status.stdout };
+    return { available: true, initialized: true, branch: branch.stdout || 'main', remote: remote.stdout || null, clean: !status.stdout, lastPushAt: readLastPush() };
   } catch {
     return { available: true, initialized: false };
   }
@@ -292,6 +292,35 @@ async function connectLibraryGitRemote(remoteUrl) {
   });
 }
 
+// When the last successful upload happened. Kept inside .git so it never
+// becomes part of the backup itself.
+const LAST_PUSH_FILE = () => path.join(LIBRARY_DIR, '.git', 'neo-last-push');
+function readLastPush() {
+  try { return fs.readFileSync(LAST_PUSH_FILE(), 'utf8').trim() || null; } catch { return null; }
+}
+function recordLastPush() {
+  try { fs.writeFileSync(LAST_PUSH_FILE(), new Date().toISOString()); } catch (err) { logError('git-last-push', err); }
+}
+
+// A repository GitHub seeded with only its starter files (README, LICENSE,
+// .gitignore) can safely be replaced by the library. Anything else might be
+// real writing from another computer, so NEO never overwrites it.
+const STARTER_FILE = /^(readme|license|licence|copying)(\.[\w.-]+)?$|^\.git(ignore|attributes)$/i;
+const STARTER_MARK = '[starter-files] ';
+
+async function remoteStarterOnly() {
+  try {
+    await runGit(['fetch', '--quiet', 'origin', 'main'], { timeout: GIT_PUSH_TIMEOUT_MS });
+    const sha = (await runGit(['rev-parse', 'FETCH_HEAD'])).stdout;
+    const count = Number((await runGit(['rev-list', '--count', sha])).stdout);
+    const files = (await runGit(['ls-tree', '-r', '--name-only', sha])).stdout.split('\n').filter(Boolean);
+    if (count > 5 || files.some((file) => file.includes('/') || !STARTER_FILE.test(file))) return null;
+    return { sha, files };
+  } catch {
+    return null;
+  }
+}
+
 function explainPushError(err) {
   const text = String((err && (err.stderr || err.message)) || '');
   if (/non-fast-forward|fetch first|rejected/i.test(text)) {
@@ -313,9 +342,36 @@ async function pushNow() {
     await runGit(['push', '--set-upstream', 'origin', 'HEAD'], { timeout: GIT_PUSH_TIMEOUT_MS });
   } catch (err) {
     logError('git-push', err);
-    throw new Error(explainPushError(err));
+    const message = explainPushError(err);
+    if (/non-fast-forward|fetch first|rejected/i.test(String(err.stderr || '')) && await remoteStarterOnly()) {
+      throw new Error(STARTER_MARK + 'This GitHub repository only has the starter files GitHub adds (like a README). Replace them with your library?');
+    }
+    throw new Error(message);
   }
+  recordLastPush();
   return libraryGitStatus();
+}
+
+// Replace a starter-only GitHub repository with the library. The lease pins
+// the exact commit we inspected, so anything pushed since then is never lost.
+async function replaceStarterRemote() {
+  await drainBookWrites();
+  return queueGit(async () => {
+    const status = await ensureLibraryGitMainBranch();
+    if (!status.initialized || !status.remote) throw new Error('Connect a GitHub repository first');
+    const starter = await remoteStarterOnly();
+    if (!starter) throw new Error('GitHub has more than starter files now, so NEO won’t replace it. Use a new, empty repository.');
+    await stageLibrary();
+    await commitStaged('NEO backup');
+    try {
+      await runGit(['push', `--force-with-lease=main:${starter.sha}`, '--set-upstream', 'origin', 'HEAD:main'], { timeout: GIT_PUSH_TIMEOUT_MS });
+    } catch (err) {
+      logError('git-replace', err);
+      throw new Error(explainPushError(err));
+    }
+    recordLastPush();
+    return libraryGitStatus();
+  });
 }
 
 // "Back up now": commit whatever is on disk, then push it.
@@ -675,6 +731,7 @@ ipcMain.handle('git:initialize', (_e, authorName, authorEmail) => queueGit(async
 }));
 ipcMain.handle('git:connectRemote', (_e, remoteUrl) => connectLibraryGitRemote(remoteUrl));
 ipcMain.handle('git:push', () => pushLibraryGit());
+ipcMain.handle('git:replaceStarter', () => replaceStarterRemote());
 
 ipcMain.handle('book:delete', async (_e, bookId, title) => {
   const win = BrowserWindow.getFocusedWindow();

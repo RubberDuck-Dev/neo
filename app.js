@@ -5637,6 +5637,27 @@ function openStats() {
   });
 }
 
+// Electron wraps errors from the main process as
+// "Error invoking remote method 'x': Error: <message>". Writers only need the message.
+const STARTER_MARK = "[starter-files] ";
+function ipcErrorText(err, fallback) {
+  const raw = String((err && err.message) || err || "");
+  const text = raw.replace(/^Error invoking remote method '[^']*':\s*/, "").replace(/^(\w*Error):\s*/, "").trim();
+  return { text: (text || fallback).replace(STARTER_MARK, ""), starter: text.startsWith(STARTER_MARK) };
+}
+
+function timeAgo(iso) {
+  const then = Date.parse(iso || "");
+  if (Number.isNaN(then)) return null;
+  const secs = Math.max(0, Math.round((Date.now() - then) / 1000));
+  if (secs < 60) return "just now";
+  const mins = Math.round(secs / 60);
+  if (mins < 60) return `${mins} min ago`;
+  const hours = Math.round(mins / 60);
+  if (hours < 24) return `${hours} hr ago`;
+  return new Date(then).toLocaleString();
+}
+
 function openSyncSettings() {
   const settings = historySettings();
   const git = settings.git || {};
@@ -5681,7 +5702,8 @@ function openSyncSettings() {
           <button id="sy-git-connect" class="btn-gold">Connect &amp; back up</button>
         </div>
         <p class="sync-detail">The first backup may ask GitHub to sign you in through your installed Git credentials.</p>
-        <div class="sync-actions"><button id="sy-git-push" class="btn-quiet">Back up now</button><span id="sy-git-status" class="sync-git-status"></span></div>
+        <div class="sync-actions"><button id="sy-git-push" class="btn-quiet">Back up now</button><button id="sy-git-replace" class="btn-gold" hidden>Replace GitHub copy</button><span id="sy-git-status" class="sync-git-status"></span></div>
+        <p id="sy-git-last" class="sync-detail" hidden></p>
       </div>
 
       <div class="sync-footer">
@@ -5691,20 +5713,43 @@ function openSyncSettings() {
   document.body.appendChild(bd);
 
   const status = bd.querySelector("#sy-git-status");
+  const replaceBtn = bd.querySelector("#sy-git-replace");
+  const lastLine = bd.querySelector("#sy-git-last");
+  let lastPushAt = null;
+  const showLastPush = () => {
+    const ago = timeAgo(lastPushAt);
+    lastLine.hidden = !ago;
+    if (ago) lastLine.textContent = `Last backed up to GitHub ${ago}.`;
+  };
+  const lastTimer = setInterval(() => {
+    if (!bd.isConnected) return clearInterval(lastTimer);
+    showLastPush();
+  }, 30000);
   const showGitStatus = (message, isError = false) => {
     status.textContent = message;
     status.style.color = isError ? "var(--red, #b44)" : "";
+    replaceBtn.hidden = true;
+  };
+  const showGitError = (err, fallback) => {
+    const { text, starter } = ipcErrorText(err, fallback);
+    showGitStatus(text, true);
+    replaceBtn.hidden = !starter;
+  };
+  const noteStatus = (current) => {
+    if (current && current.lastPushAt) lastPushAt = current.lastPushAt;
+    showLastPush();
   };
   const refreshGitStatus = async () => {
     try {
       const current = await window.neo.gitStatus();
+      noteStatus(current);
       if (!current.available) return showGitStatus("Git is not installed.", true);
       if (!current.initialized) return showGitStatus(current.parentRepo ? "Not connected yet. (Your library sits inside another Git repository; NEO will make its own.)" : "Not connected yet.");
       const remote = current.remote ? "GitHub connected." : "Local history ready; GitHub not connected.";
       const auto = git.enabled && git.autoPush !== false;
       showGitStatus(`${remote} ${current.remote && !auto ? "Automatic backup is off." : current.clean ? "Up to date." : "New writing will be backed up with the next version."}`);
     } catch (err) {
-      showGitStatus(err.message || "Could not check Git status.", true);
+      showGitError(err, "Could not check Git status.");
     }
   };
   refreshGitStatus();
@@ -5733,7 +5778,7 @@ function openSyncSettings() {
     await window.neo.writeLibrary(library);
   };
   const withBusy = async (button, work) => {
-    const buttons = bd.querySelectorAll("#sy-git-connect, #sy-git-push");
+    const buttons = bd.querySelectorAll("#sy-git-connect, #sy-git-push, #sy-git-replace");
     buttons.forEach((b) => (b.disabled = true));
     try { await work(); } finally { buttons.forEach((b) => (b.disabled = false)); }
   };
@@ -5752,20 +5797,30 @@ function openSyncSettings() {
       bd.querySelector("#sy-git-enabled").checked = true;
       await saveForm();
       showGitStatus("Uploading…");
-      await window.neo.pushGit();
+      noteStatus(await window.neo.pushGit());
       showGitStatus("Connected. Automatic backups are on.");
     } catch (err) {
-      showGitStatus(err.message || "Could not connect GitHub.", true);
+      showGitError(err, "Could not connect GitHub.");
     }
   });
   bd.querySelector("#sy-git-push").onclick = (e) => withBusy(e.currentTarget, async () => {
     try {
       flushAllSaves();
       showGitStatus("Uploading…");
-      await window.neo.pushGit();
-      showGitStatus("Backed up to GitHub just now.");
+      noteStatus(await window.neo.pushGit());
+      showGitStatus("Backed up to GitHub.");
     } catch (err) {
-      showGitStatus(err.message || "Could not back up to GitHub.", true);
+      showGitError(err, "Could not back up to GitHub.");
+    }
+  });
+  replaceBtn.onclick = (e) => withBusy(e.currentTarget, async () => {
+    try {
+      flushAllSaves();
+      showGitStatus("Replacing GitHub’s starter files with your library…");
+      noteStatus(await window.neo.replaceGitStarter());
+      showGitStatus("Backed up. GitHub now holds your library.");
+    } catch (err) {
+      showGitError(err, "Could not replace the GitHub copy.");
     }
   });
   const versions = bd.querySelector("#sy-history-versions");
@@ -6912,7 +6967,10 @@ window.neo.onMenu(async (msg) => {
   if (msg.type === "import") importBooks();
   if (msg.type === "stats") openStats();
   if (msg.type === "syncSettings") openSyncSettings();
-  if (msg.type === "gitAutoPushError") toast(`GitHub backup failed: ${msg.message || "open Sync Settings to retry"}`);
+  if (msg.type === "gitAutoPushError") {
+    const { text, starter } = ipcErrorText(msg.message, "open Sync Settings to retry");
+    toast(starter ? "GitHub backup paused: the repository has starter files. Open Sync Settings to replace them." : `GitHub backup failed: ${text}`, 7000);
+  }
   if (msg.type === "plugins") openPlugins();
   if (msg.type === "coverArt") openCoverArt();
   if (msg.type === "align") {
