@@ -645,6 +645,69 @@ ipcMain.handle('library:write', (_e, data) => {
   return true;
 });
 
+// Search every book's manuscript from the shelf. Plain substring match,
+// case-insensitive, one paragraph at a time (matches never span paragraphs,
+// same as Find in the editor). Returns snippets grouped by book.
+function htmlParagraphs(html) {
+  const decode = (t) => t
+    .replace(/&nbsp;/g, ' ').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#39;/g, "'")
+    .replace(/&#(\d+);/g, (_m, n) => String.fromCodePoint(Number(n)))
+    .replace(/&#x([0-9a-f]+);/gi, (_m, n) => String.fromCodePoint(parseInt(n, 16)))
+    .replace(/&amp;/g, '&');
+  return String(html || '')
+    .split(/<\/p>/i)
+    .map((chunk) => decode(chunk.replace(/<[^>]*>/g, '')))
+    .filter((text) => text.trim());
+}
+
+ipcMain.handle('library:search', async (_e, query) => {
+  const q = String(query || '').trim();
+  if (q.length < 2) return [];
+  const ql = q.toLowerCase();
+  const lib = readJSON(LIBRARY_FILE, { shelves: [] });
+  const shelved = (lib.shelves || []).flatMap((s) => s.bookIds || []);
+  const ids = fs.readdirSync(LIBRARY_DIR).filter((d) => d.startsWith('book-'))
+    .sort((a, b) => (shelved.indexOf(a) + 1 || 1e9) - (shelved.indexOf(b) + 1 || 1e9));
+  const results = [];
+  let total = 0;
+  for (const id of ids) {
+    const meta = readJSON(path.join(LIBRARY_DIR, id, 'book.json'), null);
+    if (!meta || !Array.isArray(meta.chapterOrder)) continue;
+    const hits = [];
+    let count = 0;
+    for (const [index, chId] of meta.chapterOrder.entries()) {
+      let html = '';
+      try { html = await fs.promises.readFile(path.join(LIBRARY_DIR, id, 'chapters', chId + '.html'), 'utf8'); } catch { continue; }
+      let ordinal = 0;
+      for (const para of htmlParagraphs(html)) {
+        const lower = para.toLowerCase();
+        let at = lower.indexOf(ql);
+        while (at !== -1) {
+          count++;
+          if (hits.length < 25 && total < 400) {
+            const start = Math.max(0, at - 60);
+            const end = Math.min(para.length, at + q.length + 60);
+            hits.push({
+              chapterId: chId,
+              chapterIndex: index,
+              chapterTitle: (meta.chapterTitles || {})[chId] || '',
+              ordinal,
+              before: (start > 0 ? '…' : '') + para.slice(start, at).trimStart(),
+              match: para.slice(at, at + q.length),
+              after: para.slice(at + q.length, end).trimEnd() + (end < para.length ? '…' : '')
+            });
+            total++;
+          }
+          ordinal++;
+          at = lower.indexOf(ql, at + q.length);
+        }
+      }
+    }
+    if (count) results.push({ bookId: id, title: meta.title || 'Untitled', author: meta.author || '', count, hits });
+  }
+  return results;
+});
+
 // A book is a folder: book.json + chapters/*.html + notes.html + outline.html + darlings.json
 ipcMain.handle('book:create', (_e, meta) => {
   ensureLibrary();

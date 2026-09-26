@@ -19,6 +19,10 @@ Get the latest installer from the **[Releases page](../../releases)**:
 
 Your library looks like a bookshelf, not a file list. Labeled shelves you organize however you like — by series, by status, by pen name. Progress bars on the covers show how far you are from your word goals. You can drag-and-drop books anywhere. You can also drag shelves around and put cover art on your titles.
 
+**Search every book**
+
+On the bookshelf, ⌘F (or the Search button) searches all your manuscripts at once. Handy for series continuity: what colour were her eyes in book one? Click a result and NEO opens that book with Find already on the match.
+
 **Just a blank page** 
 
 There's a white page by default or a dark mode (which I now prefer!). Controls fade until you mouse over them. Chapters number and renumber themselves automatically. Drop caps mark chapter openings, because I'm a sucker for drop-caps. Em dashes, true ellipses, and curly quotes sort themselves out as you type. Spellcheck exists only when you invoke it — no more red squiggles mid-sentence triggering your imposter syndrome.
