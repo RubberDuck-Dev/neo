@@ -1028,3 +1028,11 @@ body.bright .show-scrollbar::-webkit-scrollbar-thumb:hover { background: rgba(25
 .lsearch-hit .where { display: block; font-family: system-ui, sans-serif; font-size: 11px; color: var(--muted); margin-bottom: 2px; }
 .lsearch-hit mark { background: color-mix(in srgb, var(--accent) 35%, transparent); color: inherit; border-radius: 2px; }
 .lsearch-more { font-size: 12px; color: var(--muted); padding: 2px 8px 6px; }
+
+/* Manuscript format export */
+.ms-modal { width: min(520px, 92vw); }
+.ms-modal label { display: block; font-size: 12px; color: var(--muted); margin-top: 10px; }
+.ms-modal input, .ms-modal textarea { display: block; width: 100%; box-sizing: border-box; margin-top: 4px; padding: 7px 10px; font-size: 14px; font-family: inherit; background: var(--bg); color: var(--ui-text); border: 1px solid var(--line-strong); border-radius: 6px; resize: vertical; }
+.ms-modal input:focus, .ms-modal textarea:focus { outline: none; border-color: var(--accent); }
+.ms-row { display: flex; gap: 12px; }
+.ms-row label { flex: 1; }

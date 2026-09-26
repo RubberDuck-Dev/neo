@@ -7212,6 +7212,147 @@ function buildDocxEntries(data) {
   ];
 }
 
+/* ---------- Manuscript format (standard submission / Shunn) ---------- */
+// What agents and editors ask for: Times New Roman 12, double spaced, one-inch
+// margins, half-inch indents, contact block and rounded word count on the
+// first page, "Surname / TITLE / page" in the header from page two, each
+// chapter a third of the way down a new page, # for scene breaks, END at the
+// close. Contact details stay on this computer (see library.backup.json).
+
+function manuscriptWordCount(d) {
+  const words = d.sections.reduce((n, ch) => n + ch.paras.reduce((m, p) => m + (p.sceneBreak ? 0 : (p.text.match(/\S+/g) || []).length), 0), 0);
+  if (words >= 20000) return { words, label: `about ${(Math.round(words / 1000) * 1000).toLocaleString("en-US")} words` };
+  return { words, label: `about ${Math.max(100, Math.round(words / 100) * 100).toLocaleString("en-US")} words` };
+}
+
+function buildManuscriptDocxEntries(d, contact) {
+  const TNR = '<w:rFonts w:ascii="Times New Roman" w:hAnsi="Times New Roman" w:cs="Times New Roman"/>';
+  const para = (runs, o = {}) => {
+    const pPr = [];
+    if (o.pageBreak) pPr.push("<w:pageBreakBefore/>");
+    if (o.keepNext) pPr.push("<w:keepNext/>");
+    if (o.tabRight) pPr.push('<w:tabs><w:tab w:val="right" w:pos="9360"/></w:tabs>');
+    pPr.push(`<w:spacing w:before="${o.before || 0}" w:after="0" w:line="${o.single ? 240 : 480}" w:lineRule="auto"/>`);
+    if (o.indent) pPr.push('<w:ind w:firstLine="720"/>');
+    else if (o.poetry) pPr.push('<w:ind w:left="720" w:right="720"/>');
+    if (o.align) pPr.push(`<w:jc w:val="${o.align}"/>`);
+    const rXml = runs.map((r) => {
+      if (r.tab) return "<w:r><w:tab/></w:r>";
+      const rPr = (r.b ? "<w:b/>" : "") + (r.i ? "<w:i/>" : "");
+      return `<w:r>${rPr ? `<w:rPr>${rPr}</w:rPr>` : ""}<w:t xml:space="preserve">${escXml(r.text)}</w:t></w:r>`;
+    }).join("");
+    return `<w:p><w:pPr>${pPr.join("")}</w:pPr>${rXml}</w:p>`;
+  };
+  const body = [];
+  const count = manuscriptWordCount(d);
+  // first page: contact block (single spaced, top left), word count top right
+  const lines = [contact.legalName || d.author, ...String(contact.address || "").split(/\r?\n/), contact.phone, contact.email]
+    .map((l) => (l || "").trim()).filter(Boolean);
+  lines.forEach((line, i) => {
+    body.push(para(i === 0 ? [{ text: line }, { tab: true }, { text: count.label }] : [{ text: line }], { single: true, tabRight: i === 0 }));
+  });
+  if (!lines.length) body.push(para([{ tab: true }, { text: count.label }], { single: true, tabRight: true }));
+  // title and byline, centred, about halfway down
+  body.push(para([{ text: d.title }], { align: "center", before: 4320 }));
+  if (d.subtitle) body.push(para([{ text: d.subtitle }], { align: "center" }));
+  body.push(para([{ text: `by ${contact.byline || d.author}` }], { align: "center" }));
+
+  const multi = d.sections.length > 1;
+  d.sections.forEach((ch, i) => {
+    if (multi) {
+      // each chapter starts a third of the way down a fresh page
+      body.push(para([{ text: ch.heading || `Chapter ${i + 1}` }], { align: "center", pageBreak: true, before: 2880, keepNext: true }));
+      body.push(para([], { keepNext: true }));
+    } else if (i === 0) {
+      body.push(para([], {}));
+    }
+    for (const p of ch.paras) {
+      if (p.sceneBreak) body.push(para([{ text: "#" }], { align: "center" }));
+      else if (p.poetry) body.push(para(paraRuns(p.html), { poetry: true }));
+      else if (p.align === "center" || p.align === "right") body.push(para(paraRuns(p.html), { align: p.align }));
+      else body.push(para(paraRuns(p.html), { indent: true }));
+    }
+  });
+  body.push(para([{ text: "END" }], { align: "center", before: 480 }));
+
+  const surname = String(contact.byline || d.author || "").trim().split(/\s+/).pop() || "Author";
+  const keyword = String(d.title || "Untitled").toUpperCase().split(/\s+/).filter((w) => !/^(THE|A|AN)$/.test(w)).slice(0, 3).join(" ") || "UNTITLED";
+  const headerXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<w:hdr xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:p><w:pPr><w:jc w:val="right"/><w:spacing w:after="0" w:line="240" w:lineRule="auto"/></w:pPr><w:r><w:t xml:space="preserve">${escXml(surname)} / ${escXml(keyword)} / </w:t></w:r><w:r><w:fldChar w:fldCharType="begin"/></w:r><w:r><w:instrText xml:space="preserve"> PAGE </w:instrText></w:r><w:r><w:fldChar w:fldCharType="separate"/></w:r><w:r><w:t>2</w:t></w:r><w:r><w:fldChar w:fldCharType="end"/></w:r></w:p></w:hdr>`;
+  const documentXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><w:body>${body.join("")}
+<w:sectPr><w:headerReference w:type="default" r:id="rId2"/><w:pgSz w:w="12240" w:h="15840"/><w:pgMar w:top="1440" w:right="1440" w:bottom="1440" w:left="1440" w:header="720" w:footer="720"/><w:titlePg/></w:sectPr>
+</w:body></w:document>`;
+  const stylesXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+<w:docDefaults><w:rPrDefault><w:rPr>${TNR}<w:sz w:val="24"/><w:szCs w:val="24"/></w:rPr></w:rPrDefault>
+<w:pPrDefault><w:pPr><w:spacing w:after="0" w:line="480" w:lineRule="auto"/></w:pPr></w:pPrDefault></w:docDefaults>
+</w:styles>`;
+  return [
+    { path: "[Content_Types].xml", content: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+<Default Extension="xml" ContentType="application/xml"/>
+<Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>
+<Override PartName="/word/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml"/>
+<Override PartName="/word/header1.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.header+xml"/>
+</Types>` },
+    { path: "_rels/.rels", content: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/>
+</Relationships>` },
+    { path: "word/_rels/document.xml.rels", content: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>
+<Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/header" Target="header1.xml"/>
+</Relationships>` },
+    { path: "word/document.xml", content: documentXml },
+    { path: "word/styles.xml", content: stylesXml },
+    { path: "word/header1.xml", content: headerXml },
+  ];
+}
+
+// The pen name this book is written under (falls back to the current one).
+function authorForBook() {
+  return (library.authors || []).find((a) => a.name === book.author) || currentAuthor();
+}
+
+// One small form before each manuscript export: the contact block (saved for
+// next time, on this computer only) and a look at the word count.
+function manuscriptDetails(d) {
+  const author = authorForBook();
+  const saved = author.submission || {};
+  const count = manuscriptWordCount(d);
+  return new Promise((resolve) => {
+    const bd = document.createElement("div");
+    bd.className = "modal-backdrop";
+    bd.innerHTML = `
+      <div class="modal ms-modal">
+        <h2 style="font-size:17px">Manuscript format</h2>
+        <p class="soft">Standard submission format: Times New Roman 12, double spaced, your contact details and a rounded word count (${escHtml(count.label)}) on page one. These details are kept on this computer only, never in your GitHub backup.</p>
+        <label>Legal name <input data-f="legalName" value="${escHtml(saved.legalName || "")}" placeholder="${escHtml(book.author || "")}"/></label>
+        <label>Mailing address <textarea data-f="address" rows="3" placeholder="Street&#10;City, State ZIP">${escHtml(saved.address || "")}</textarea></label>
+        <div class="ms-row">
+          <label>Phone <input data-f="phone" value="${escHtml(saved.phone || "")}"/></label>
+          <label>Email <input data-f="email" value="${escHtml(saved.email || "")}"/></label>
+        </div>
+        <label>Byline <input data-f="byline" value="${escHtml(book.author || "")}"/></label>
+        <div style="text-align:right;margin-top:14px"><button class="m-cancel btn-quiet">Cancel</button> <button class="m-ok btn-gold">Export .docx</button></div>
+      </div>`;
+    document.body.appendChild(bd);
+    const done = (value) => { bd.remove(); resolve(value); };
+    bd.querySelector(".m-cancel").onclick = () => done(null);
+    bd.querySelector(".m-ok").onclick = async () => {
+      const f = Object.fromEntries([...bd.querySelectorAll("[data-f]")].map((el) => [el.dataset.f, el.value.trim()]));
+      author.submission = { legalName: f.legalName, address: f.address, phone: f.phone, email: f.email };
+      await window.neo.writeLibrary(library);
+      done(f);
+    };
+    bd.addEventListener("keydown", (e) => { if (e.key === "Escape") { e.stopPropagation(); done(null); } });
+    bd.querySelector("[data-f]").focus();
+  });
+}
+
 /* ---------- EPUB (KDP-friendly: EPUB 3, nav + NCX TOC, cover image) ---------- */
 
 // The cover that travels with an export: the writer's own image if they
@@ -7502,7 +7643,12 @@ async function doExport(format) {
   flushAllSaves();
   const defaultName = safeName(book.title);
   let payload;
-  if (format === "docx")
+  if (format === "manuscript") {
+    const d = bookExportData();
+    const contact = await manuscriptDetails(d);
+    if (!contact) return;
+    payload = { format: "docx", defaultName: defaultName + " - manuscript", zipEntries: buildManuscriptDocxEntries(d, contact) };
+  } else if (format === "docx")
     payload = { format, defaultName, zipEntries: buildDocxEntries() };
   else if (format === "epub")
     payload = { format, defaultName, zipEntries: await buildEpubEntries() };

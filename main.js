@@ -266,6 +266,8 @@ function writeLibraryBackup() {
   const copy = JSON.parse(JSON.stringify(lib));
   for (const key of PRIVATE_LIBRARY_KEYS) delete copy[key];
   if (copy.history && copy.history.git) delete copy.history.git.remoteUrl;
+  // submission contact details (legal name, address, phone) stay local
+  for (const author of copy.authors || []) delete author.submission;
   const next = JSON.stringify(copy, null, 2);
   const file = path.join(LIBRARY_DIR, LIBRARY_BACKUP_FILE);
   let prev = null;
@@ -1693,6 +1695,7 @@ function buildMenu() {
             { label: 'Web Page (.html)', click: () => sendToWindow({ type: 'export', format: 'html' }) },
             { label: 'PDF (.pdf)', click: () => sendToWindow({ type: 'export', format: 'pdf' }) },
             { label: 'Word (.docx)', click: () => sendToWindow({ type: 'export', format: 'docx' }) },
+            { label: 'Manuscript Format (.docx)…', click: () => sendToWindow({ type: 'export', format: 'manuscript' }) },
             { label: 'EPUB (.epub)', click: () => sendToWindow({ type: 'export', format: 'epub' }) }
           ]
         },

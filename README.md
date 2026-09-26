@@ -61,7 +61,7 @@ Daily word goals, word sprints, and a NaNoWriMo-style progress chart. Needs more
 
 **Exports** 
 
-EPUB 3 with a proper table of contents built to KDP's guidelines, Word .docx, PDF, HTML, markdown, and plain text. Email a timestamped PDF snapshot to yourself with a SHA-256 fingerprint of the text in the body. Might come in handy someday.
+EPUB 3 with a proper table of contents built to KDP's guidelines, Word .docx, PDF, HTML, markdown, and plain text. Submitting to agents or magazines? File → Export → Manuscript Format builds a standard-submission .docx (Times New Roman, double spaced, contact block, rounded word count, running header). Your contact details are saved on this computer only. Email a timestamped PDF snapshot to yourself with a SHA-256 fingerprint of the text in the body. Might come in handy someday.
 
 **Import** 
 
