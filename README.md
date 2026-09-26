@@ -69,7 +69,7 @@ Continuous autosave, daily zip backups kept for two weeks, everything stored as 
 
 **Version history**
 
-Optional local checkpoints preserve complete book states while you write. Browse them from File → Sync Settings; Compare shows exactly what changed since any version, chapter by chapter, before you decide to restore it. In File → Sync Settings, you can connect an empty GitHub repository for the entire NEO Library. NEO creates its local history automatically, and you can opt into background GitHub backups after each version. NEO never creates a public repository.
+Optional local checkpoints preserve complete book states while you write. Browse them from File → Sync Settings; Compare shows exactly what changed since any version, chapter by chapter, before you decide to restore it. In File → Sync Settings, you can connect an empty GitHub repository for the entire NEO Library. NEO creates its local history automatically, and you can opt into background GitHub backups after each version. NEO never creates a public repository. New computer? "Set up this computer from a GitHub backup…" in the same window downloads the library and picks up the backups where they left off; anything already on that computer is set aside, not deleted.
 
 ## Your files
 

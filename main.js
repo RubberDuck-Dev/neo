@@ -183,9 +183,9 @@ function gitEnv() {
   return { ...process.env, PATH: parts.join(path.delimiter), GIT_TERMINAL_PROMPT: '0', GCM_INTERACTIVE: 'auto' };
 }
 
-function runGit(args, { timeout = GIT_TIMEOUT_MS } = {}) {
+function runGit(args, { timeout = GIT_TIMEOUT_MS, cwd = LIBRARY_DIR } = {}) {
   return new Promise((resolve, reject) => {
-    execFile('git', args, { cwd: LIBRARY_DIR, windowsHide: true, timeout, env: gitEnv() }, (error, stdout, stderr) => {
+    execFile('git', args, { cwd, windowsHide: true, timeout, env: gitEnv() }, (error, stdout, stderr) => {
       if (error) {
         error.stdout = stdout;
         error.stderr = stderr;
@@ -1403,6 +1403,94 @@ async function changeLibraryLocation() {
   });
   await switchLibraryTo(target);
 }
+
+// ---------------------------------------------------------------------------
+// Restore a library from its GitHub backup (a new or replacement computer).
+// One-way and non-destructive: the backup is cloned beside the library,
+// checked, and only then swapped in. Whatever was here before is renamed,
+// never deleted.
+// ---------------------------------------------------------------------------
+
+const GIT_CLONE_TIMEOUT_MS = 10 * 60 * 1000;
+
+function hasBooks(dir) {
+  try { return fs.readdirSync(dir).some((name) => name.startsWith('book-')); } catch { return false; }
+}
+
+async function restoreLibraryFromGit(remoteUrl) {
+  if (!/^(https:\/\/github\.com\/|git@github\.com:)[\w.-]+\/[\w.-]+(?:\.git)?\/?$/i.test(String(remoteUrl || ''))) {
+    throw new Error('Enter a GitHub repository URL');
+  }
+  if (!(await libraryGitStatus()).available) throw new Error('Git is not installed');
+  const parent = path.dirname(LIBRARY_DIR);
+  const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+  const incoming = path.join(parent, `.neo-restore-${stamp}`);
+  try {
+    try {
+      await runGit(['clone', '--quiet', '--branch', 'main', remoteUrl, incoming], { cwd: parent, timeout: GIT_CLONE_TIMEOUT_MS });
+    } catch (err) {
+      logError('git-restore-clone', err);
+      if (/Remote branch main not found|not found in upstream/i.test(String(err.stderr))) {
+        throw new Error('That repository has no NEO backup on its main branch.');
+      }
+      if (/could not read Username|terminal prompts disabled|Authentication failed|not found|403/i.test(String(err.stderr))) {
+        throw new Error('NEO couldn’t download that repository. Check the address, and that this computer is signed in to GitHub (GitHub Desktop or `gh auth login`).');
+      }
+      throw new Error(explainPushError(err));
+    }
+    const backup = readJSON(path.join(incoming, LIBRARY_BACKUP_FILE), null) || readJSON(path.join(incoming, 'library.json'), null);
+    if (!backup || !Array.isArray(backup.shelves)) {
+      throw new Error('That repository doesn’t look like a NEO Library backup.');
+    }
+    // This computer's private settings (email) stay; the backup brings
+    // shelves, authors and preferences. Backups resume automatically.
+    const local = readJSON(LIBRARY_FILE, {}) || {};
+    const restored = { ...backup };
+    for (const key of PRIVATE_LIBRARY_KEYS) if (local[key] !== undefined) restored[key] = local[key];
+    restored.history = { ...(backup.history || {}) };
+    restored.history.git = { ...(restored.history.git || {}), enabled: true, autoPush: true, remoteUrl };
+    writeJSON(path.join(incoming, 'library.json'), restored);
+
+    // Swap in. Whatever was here is kept beside it, renamed.
+    let keptAs = null;
+    if (fs.existsSync(LIBRARY_DIR)) {
+      keptAs = path.join(parent, `${path.basename(LIBRARY_DIR)} (before restore ${stamp.slice(0, 10)})`);
+      let n = 2;
+      while (fs.existsSync(keptAs)) keptAs = keptAs.replace(/( \d+)?\)$/, ` ${n++})`);
+      try {
+        await fs.promises.rename(LIBRARY_DIR, keptAs);
+      } catch (err) {
+        logError('git-restore-swap', err);
+        throw new Error('NEO couldn’t set your current library aside (a file in it may be open in another app). Nothing was changed.');
+      }
+    }
+    try {
+      await fs.promises.rename(incoming, LIBRARY_DIR);
+    } catch (err) {
+      logError('git-restore-swap', err);
+      if (keptAs) await fs.promises.rename(keptAs, LIBRARY_DIR).catch((e) => logError('git-restore-undo', e));
+      throw new Error('NEO couldn’t move the restored library into place. Your library is as it was.');
+    }
+    // A brand-new computer's empty starter library isn't worth keeping.
+    if (keptAs && !hasBooks(keptAs)) {
+      await fs.promises.rm(keptAs, { recursive: true, force: true }).catch(() => {});
+      keptAs = null;
+    }
+    try { recordLastPush(); } catch { /* cosmetic */ }
+    writeCatalog();
+    return { keptAs, books: fs.readdirSync(LIBRARY_DIR).filter((n) => n.startsWith('book-')).length };
+  } finally {
+    await fs.promises.rm(incoming, { recursive: true, force: true }).catch(() => {});
+  }
+}
+
+ipcMain.handle('git:restore', async (_e, remoteUrl) => {
+  await quietLibrary();
+  const result = await queueGit(() => restoreLibraryFromGit(remoteUrl));
+  // reload after the reply lands, so the renderer can show what happened
+  setTimeout(() => { for (const w of BrowserWindow.getAllWindows()) w.reload(); }, 3500);
+  return result;
+});
 
 // ---------------------------------------------------------------------------
 // Window

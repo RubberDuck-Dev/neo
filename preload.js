@@ -28,6 +28,7 @@ contextBridge.exposeInMainWorld('neo', {
   connectGitRemote: (remoteUrl) => ipcRenderer.invoke('git:connectRemote', remoteUrl),
   pushGit: () => ipcRenderer.invoke('git:push'),
   replaceGitStarter: () => ipcRenderer.invoke('git:replaceStarter'),
+  restoreFromGit: (remoteUrl) => ipcRenderer.invoke('git:restore', remoteUrl),
 
   exportSave: (payload) => ipcRenderer.invoke('export:save', payload),
   emailDraft: (payload) => ipcRenderer.invoke('email:draft', payload),

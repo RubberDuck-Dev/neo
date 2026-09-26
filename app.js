@@ -6146,6 +6146,7 @@ function openSyncSettings() {
         <p class="sync-detail">The first backup may ask GitHub to sign you in through your installed Git credentials.</p>
         <div class="sync-actions"><button id="sy-git-push" class="btn-quiet">Back up now</button><button id="sy-git-replace" class="btn-gold" hidden>Replace GitHub copy</button><span id="sy-git-status" class="sync-git-status"></span></div>
         <p id="sy-git-last" class="sync-detail" hidden></p>
+        <div class="sync-actions"><button id="sy-git-restore" class="btn-quiet">Set up this computer from a GitHub backup…</button></div>
       </div>
 
       <div class="sync-footer">
@@ -6220,7 +6221,7 @@ function openSyncSettings() {
     await window.neo.writeLibrary(library);
   };
   const withBusy = async (button, work) => {
-    const buttons = bd.querySelectorAll("#sy-git-connect, #sy-git-push, #sy-git-replace");
+    const buttons = bd.querySelectorAll("#sy-git-connect, #sy-git-push, #sy-git-replace, #sy-git-restore");
     buttons.forEach((b) => (b.disabled = true));
     try { await work(); } finally { buttons.forEach((b) => (b.disabled = false)); }
   };
@@ -6253,6 +6254,27 @@ function openSyncSettings() {
       showGitStatus("Backed up to GitHub.");
     } catch (err) {
       showGitError(err, "Could not back up to GitHub.");
+    }
+  });
+  bd.querySelector("#sy-git-restore").onclick = (e) => withBusy(e.currentTarget, async () => {
+    const remoteUrl = bd.querySelector("#sy-git-remote").value.trim();
+    if (!remoteUrl) {
+      showGitStatus("Paste the backup repository’s address above first.", true);
+      bd.querySelector("#sy-git-remote").focus();
+      return;
+    }
+    const choice = await optionModal("Set up this computer from GitHub?", `NEO will download the library backed up at ${escHtml(remoteUrl)} and use it here.`, [
+      { label: "Download and use it", desc: "If this computer already has books, they’re kept beside it in a folder named “NEO Library (before restore …)”. Nothing is deleted.", value: "restore" },
+    ]);
+    if (choice !== "restore") return;
+    try {
+      flushAllSaves();
+      showGitStatus("Downloading your library…");
+      const result = await window.neo.restoreFromGit(remoteUrl);
+      showGitStatus(`Restored ${result.books} book${result.books === 1 ? "" : "s"}. Opening…`);
+      if (result.keptAs) toast(`Your earlier library is kept at ${result.keptAs}`, 8000);
+    } catch (err) {
+      showGitError(err, "Could not restore from GitHub.");
     }
   });
   replaceBtn.onclick = (e) => withBusy(e.currentTarget, async () => {
