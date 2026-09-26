@@ -3452,6 +3452,7 @@ function switchTab(name) {
   );
   if (spellOn) setTimeout(scanSpellingHere, 0);
   if (revisionOn && name !== "manuscript") toggleRevisionPass(false);
+  if (name !== "manuscript") stopReadAloud(true);
   const paper = $("#paper");
   const aux = $("#aux-paper");
   const auxEditor = $("#aux-editor");
@@ -4394,6 +4395,7 @@ setInterval(() => {
 
 async function backToShelf() {
   if (revisionOn) toggleRevisionPass(false);
+  stopReadAloud(true);
   flushAllSaves();
   finishPendingCheckpoint("closed book");
   tabPlaces = {};
@@ -5411,6 +5413,155 @@ document.addEventListener("contextmenu", (e) => {
   document.addEventListener("mousedown", close, true);
 });
 
+/* ================================================================== */
+/*  READ ALOUD                                                         */
+/*  Hearing prose catches what reading skips. Uses the computer's own  */
+/*  voices (offline). Reads the selection, or from the caret to the    */
+/*  end of the chapter, one sentence at a time, lighting the sentence  */
+/*  being read. Any key, a click, or Esc stops it.                     */
+/* ================================================================== */
+
+let reading = null; // { queue: [{ range, text }], index, token }
+
+// Sentences inside one paragraph, as DOM ranges.
+function sentenceRanges(p, fromNode = null, fromOffset = 0) {
+  const nodes = [];
+  const walker = document.createTreeWalker(p, NodeFilter.SHOW_TEXT);
+  let n;
+  while ((n = walker.nextNode())) {
+    if (n.parentElement && n.parentElement.closest(".ph-mark, .ghost")) continue;
+    nodes.push(n);
+  }
+  let text = "";
+  const starts = [];
+  let skip = 0;
+  for (const node of nodes) {
+    if (node === fromNode) skip = text.length + fromOffset;
+    starts.push(text.length);
+    text += node.data;
+  }
+  const at = (offset) => {
+    let i = starts.length - 1;
+    while (i > 0 && starts[i] > offset) i--;
+    return [nodes[i], Math.min(offset - starts[i], nodes[i].data.length)];
+  };
+  const out = [];
+  const re = /[^.!?…]+(?:[.!?…]+["”’)\]]*|$)\s*/g;
+  let m;
+  while ((m = re.exec(text))) {
+    if (!m[0]) { re.lastIndex++; continue; }
+    const end = m.index + m[0].trimEnd().length;
+    if (end <= skip) continue;
+    const start = m.index; // the caret's whole sentence, not half of it
+    const said = text.slice(start, end).trim();
+    if (!/[A-Za-z0-9]/.test(said)) continue;
+    const range = new Range();
+    range.setStart(...at(start));
+    range.setEnd(...at(end));
+    out.push({ range, text: said });
+  }
+  return out;
+}
+
+function readAloudQueue() {
+  const sel = window.getSelection();
+  const body = currentChapterId && document.querySelector(`.chapter[data-id="${currentChapterId}"] .chapter-body`);
+  if (!body) return [];
+  // a selection: read exactly that, paragraph by paragraph
+  if (sel && sel.rangeCount && !sel.isCollapsed && body.closest(".chapter").contains(sel.anchorNode)) {
+    const picked = sel.getRangeAt(0);
+    const queue = [];
+    for (const p of body.querySelectorAll("p:not(.scene-break):not(.ghost)")) {
+      if (!picked.intersectsNode(p)) continue;
+      for (const s of sentenceRanges(p)) {
+        const r = s.range.cloneRange();
+        if (picked.compareBoundaryPoints(Range.START_TO_START, r) > 0) r.setStart(picked.startContainer, picked.startOffset);
+        if (picked.compareBoundaryPoints(Range.END_TO_END, r) < 0) r.setEnd(picked.endContainer, picked.endOffset);
+        if (r.collapsed) continue;
+        const said = r.toString().trim();
+        if (/[A-Za-z0-9]/.test(said)) queue.push({ range: r, text: said });
+      }
+    }
+    return queue;
+  }
+  // otherwise: from the caret to the end of the chapter
+  let startP = null, node = null, offset = 0;
+  if (sel && sel.rangeCount && body.contains(sel.anchorNode)) {
+    node = sel.anchorNode;
+    offset = sel.anchorOffset;
+    const el = node.nodeType === Node.TEXT_NODE ? node.parentElement : node;
+    startP = el && el.closest("p");
+    if (node.nodeType !== Node.TEXT_NODE) node = null;
+  }
+  const paras = [...body.querySelectorAll("p:not(.scene-break):not(.ghost)")];
+  let i = startP ? Math.max(0, paras.indexOf(startP)) : 0;
+  const queue = [];
+  for (; i < paras.length; i++) {
+    const first = paras[i] === startP;
+    queue.push(...sentenceRanges(paras[i], first ? node : null, first ? offset : 0));
+  }
+  return queue;
+}
+
+function stopReadAloud(quiet = false) {
+  if (!reading) return;
+  reading = null;
+  window.speechSynthesis.cancel();
+  CSS.highlights.delete("neo-reading");
+  if (!quiet) toast("Stopped reading");
+}
+
+function readNextSentence(token) {
+  if (!reading || reading.token !== token) return;
+  const item = reading.queue[reading.index];
+  if (!item) {
+    stopReadAloud(true);
+    toast("Finished reading");
+    return;
+  }
+  CSS.highlights.set("neo-reading", new Highlight(item.range));
+  const rect = item.range.getBoundingClientRect();
+  if (rect.top < 80 || rect.bottom > window.innerHeight - 120) {
+    const scroller = $("#paper-scroll");
+    scroller.scrollBy({ top: rect.top - window.innerHeight / 3, behavior: "smooth" });
+  }
+  const u = new SpeechSynthesisUtterance(item.text);
+  u.onend = () => {
+    if (!reading || reading.token !== token) return;
+    reading.index++;
+    readNextSentence(token);
+  };
+  u.onerror = (e) => {
+    if (!reading || reading.token !== token || e.error === "interrupted" || e.error === "canceled") return;
+    stopReadAloud(true);
+    toast("This computer’s voice couldn’t read that");
+  };
+  window.speechSynthesis.speak(u);
+}
+
+function toggleReadAloud() {
+  if (reading) return stopReadAloud();
+  if (!("speechSynthesis" in window)) return toast("Read Aloud isn’t available on this computer");
+  if (!book || currentTab !== "manuscript") return toast("Open a manuscript to read it aloud");
+  const queue = readAloudQueue();
+  if (!queue.length) return toast("Nothing to read from here");
+  window.speechSynthesis.cancel();
+  reading = { queue, index: 0, token: Symbol("read") };
+  toast("Reading aloud. Press any key to stop", 3000);
+  readNextSentence(reading.token);
+}
+
+// Any key or click stops the reading; the key itself still does its job,
+// except Esc, which only stops.
+document.addEventListener("keydown", (e) => {
+  if (!reading) return;
+  if (["Shift", "Control", "Alt", "Meta"].includes(e.key)) return;
+  if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.code === "KeyR") return; // the menu toggles it
+  if (e.key === "Escape") { e.preventDefault(); e.stopImmediatePropagation(); }
+  stopReadAloud();
+}, true);
+document.addEventListener("mousedown", () => { if (reading) stopReadAloud(); }, true);
+
 let typewriterEnabled = false;
 // The page needs empty room beneath its last line, or the caret can't be held
 // at the centre once the end of the draft scrolls into view (body.typewriter
@@ -6407,6 +6558,7 @@ function showHelp() {
         ${row(KPH, 'Placeholder note')}
         ${row(KDA, 'Send the selected passage to Darlings')}
         ${row(K('⌘⇧;', 'Ctrl+Shift+;'), 'Revision pass — echoes, filler, -ly adverbs, name slips. Esc ends it')}
+        ${row(K('⌘⇧R', 'Ctrl+Shift+R'), 'Read aloud from the caret, or the selection. Any key stops it')}
         ${row(KZ, 'Undo big moves (chapter deletes, replace-all, darlings) when not mid-typing')}
         ${row('-- and ...', 'Become an em dash — and a true ellipsis …')}
         ${row(K('⌘B · ⌘I', 'Ctrl+B · Ctrl+I'), 'Bold, italic. Quotes curl themselves.')}
@@ -7256,6 +7408,7 @@ window.neo.onMenu(async (msg) => {
   if (msg.type === "find") openSearch();
   if (msg.type === "spellcheck") toggleSpellcheck();
   if (msg.type === "revisionPass") toggleRevisionPass();
+  if (msg.type === "readAloud") toggleReadAloud();
   if (msg.type === "typewriter") toggleTypewriter();
   if (msg.type === "import") importBooks();
   if (msg.type === "stats") openStats();

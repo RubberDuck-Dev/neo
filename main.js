@@ -1577,6 +1577,11 @@ function buildMenu() {
           label: 'Revision Pass',
           accelerator: 'CmdOrCtrl+Shift+;',
           click: () => sendToWindow({ type: 'revisionPass' })
+        },
+        {
+          label: 'Read Aloud',
+          accelerator: 'CmdOrCtrl+Shift+R',
+          click: () => sendToWindow({ type: 'readAloud' })
         }
       ]
     },

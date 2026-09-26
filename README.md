@@ -27,6 +27,10 @@ There's a white page by default or a dark mode (which I now prefer!). Controls f
 
 When you're editing, not drafting: Edit → Revision Pass (⌘⇧;) marks echoes (the same word again within a few lines), filler words, -ly adverbs, and names spelled differently from how you usually spell them. Right-click a mark to see why it's there. Esc puts it all away. Nothing shows until you ask.
 
+**Read aloud**
+
+Hearing your prose catches clunky rhythm and missing words that your eyes skip. Edit → Read Aloud (⌘⇧R) reads from the caret to the end of the chapter, or just the selection, in your computer's own voice, and lights up each sentence as it goes. Any key stops it.
+
 **Enter, Enter, Enter** 
 
 One Enter: new paragraph. Two: a `***` section break. Three: a new chapter. The goal is to KEEP WRITING.

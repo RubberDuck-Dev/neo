@@ -495,6 +495,8 @@ body.typewriter #paper { margin-bottom: 60vh; }
   text-decoration-skip-ink: none;
   background-color: color-mix(in srgb, var(--danger) 16%, transparent);
 }
+/* Read Aloud: the sentence being spoken */
+::highlight(neo-reading) { background-color: color-mix(in srgb, var(--accent) 30%, transparent); }
 /* Revision pass (Edit → Revision Pass): four quiet marks, gone on Esc */
 ::highlight(neo-rev-echo) { text-decoration: underline dotted var(--accent); text-decoration-thickness: 2px; text-underline-offset: 3px; }
 ::highlight(neo-rev-filler) { background-color: color-mix(in srgb, var(--accent) 22%, transparent); }
