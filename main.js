@@ -1699,6 +1699,7 @@ function buildMenu() {
             { label: 'EPUB (.epub)', click: () => sendToWindow({ type: 'export', format: 'epub' }) }
           ]
         },
+        { label: 'End Matter…', click: () => sendToWindow({ type: 'endMatter' }) },
         { type: 'separator' },
         {
           label: 'Email Draft to Myself',

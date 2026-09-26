@@ -7353,6 +7353,93 @@ function manuscriptDetails(d) {
   });
 }
 
+/* ---------- Shared end matter ---------- */
+// About the Author, Also by, and a copyright page, written once per pen name
+// and added to the back of every export of that author's books. The
+// manuscript never contains them; they appear only in exported files.
+// {year}, {title} and {author} are filled in at export time.
+
+function otherTitlesBy(author) {
+  const homeId = library.authors[0].id;
+  const ids = library.shelves.filter((s) => (s.authorId || homeId) === author.id).flatMap((s) => s.bookIds);
+  return ids.filter((id) => !book || id !== book.id);
+}
+
+function endMatterSections(d) {
+  if (!book || book.endMatterOff) return [];
+  const author = authorForBook();
+  const m = author.endMatter || {};
+  const fill = (t) => String(t || "")
+    .replace(/\{year\}/g, String(new Date().getFullYear()))
+    .replace(/\{title\}/g, d.title || "")
+    .replace(/\{author\}/g, d.author || author.name || "");
+  const paras = (text, align) => parasFromHtml(fill(text).split(/\r?\n/).map((line) => line.trim())
+    .filter(Boolean).map((line) => `<p${align ? ` style="text-align:${align}"` : ""}>${escHtml(line)}</p>`).join(""));
+  const out = [];
+  const add = (heading, text, align) => {
+    const p = paras(text, align);
+    if (p.length) out.push({ num: d.sections.length + out.length + 1, heading, paras: p, matter: true });
+  };
+  add(`Also by ${d.author || author.name}`, m.alsoBy, "center");
+  add("About the Author", m.about, "");
+  add("Copyright", m.copyright, "center");
+  return out;
+}
+
+function withEndMatter(d) {
+  const extra = endMatterSections(d);
+  if (!extra.length) return d;
+  // a one-chapter story exports without a heading; give it one once other
+  // sections follow, so the reader can tell where the story ends
+  const sections = d.sections.length === 1 && !d.sections[0].heading
+    ? [{ ...d.sections[0], heading: d.title }]
+    : d.sections;
+  return { ...d, sections: [...sections, ...extra] };
+}
+
+async function openEndMatter() {
+  const author = book ? authorForBook() : currentAuthor();
+  const m = author.endMatter || {};
+  const bd = document.createElement("div");
+  bd.className = "modal-backdrop";
+  bd.innerHTML = `
+    <div class="modal ms-modal">
+      <h2 style="font-size:17px">End matter for ${escHtml(author.name || "Anonymous")}</h2>
+      <p class="soft">Written once, added to the back of every ${escHtml(author.name || "")} book when you export it (EPUB, Word, PDF, web page, text). Your manuscript stays as it is. {year}, {title} and {author} fill themselves in.</p>
+      <label>Also by <textarea data-m="alsoBy" rows="4" placeholder="One title per line">${escHtml(m.alsoBy || "")}</textarea></label>
+      <div class="sync-actions" style="margin-top:4px"><button class="btn-quiet" data-fill>Fill from my shelves</button></div>
+      <label>About the Author <textarea data-m="about" rows="4">${escHtml(m.about || "")}</textarea></label>
+      <label>Copyright page <textarea data-m="copyright" rows="4" placeholder="Copyright © {year} {author}&#10;All rights reserved.">${escHtml(m.copyright || "")}</textarea></label>
+      ${book ? `<label class="sync-switch" style="margin-top:12px"><input type="checkbox" data-include ${book.endMatterOff ? "" : "checked"}/> <span>Include in “${escHtml(book.title || "Untitled")}”</span></label>` : ""}
+      <div style="text-align:right;margin-top:14px"><button class="m-cancel btn-quiet">Cancel</button> <button class="m-ok btn-gold">Save</button></div>
+    </div>`;
+  document.body.appendChild(bd);
+  const close = () => bd.remove();
+  bd.querySelector("[data-fill]").onclick = async () => {
+    const titles = [];
+    for (const id of otherTitlesBy(author)) {
+      const meta = await window.neo.readBookMeta(id);
+      if (meta && meta.title && meta.title !== "Untitled") titles.push(meta.title);
+    }
+    bd.querySelector('[data-m="alsoBy"]').value = titles.join("\n");
+    if (!titles.length) toast("No other titles on this pen name’s shelves yet");
+  };
+  bd.querySelector(".m-cancel").onclick = close;
+  bd.querySelector(".m-ok").onclick = async () => {
+    author.endMatter = Object.fromEntries([...bd.querySelectorAll("[data-m]")].map((el) => [el.dataset.m, el.value.trim()]));
+    await window.neo.writeLibrary(library);
+    const include = bd.querySelector("[data-include]");
+    if (include && book) {
+      book.endMatterOff = !include.checked;
+      scheduleMetaSave();
+    }
+    close();
+    toast("End matter saved");
+  };
+  bd.addEventListener("keydown", (e) => { if (e.key === "Escape") { e.stopPropagation(); close(); } });
+  bd.querySelector("textarea").focus();
+}
+
 /* ---------- EPUB (KDP-friendly: EPUB 3, nav + NCX TOC, cover image) ---------- */
 
 // The cover that travels with an export: the writer's own image if they
@@ -7648,20 +7735,19 @@ async function doExport(format) {
     const contact = await manuscriptDetails(d);
     if (!contact) return;
     payload = { format: "docx", defaultName: defaultName + " - manuscript", zipEntries: buildManuscriptDocxEntries(d, contact) };
-  } else if (format === "docx")
-    payload = { format, defaultName, zipEntries: buildDocxEntries() };
-  else if (format === "epub")
-    payload = { format, defaultName, zipEntries: await buildEpubEntries() };
-  else if (format === "txt")
-    payload = { format, defaultName, content: buildTxt() };
-  else if (format === "md")
-    payload = { format, defaultName, content: buildMd() };
-  else
-    payload = {
-      format,
-      defaultName,
-      content: buildHtml(null, { cover: await exportCover(bookExportData()) }),
-    };
+  } else {
+    const d = withEndMatter(bookExportData());
+    if (format === "docx")
+      payload = { format, defaultName, zipEntries: buildDocxEntries(d) };
+    else if (format === "epub")
+      payload = { format, defaultName, zipEntries: await buildEpubEntries(d) };
+    else if (format === "txt")
+      payload = { format, defaultName, content: buildTxt(d) };
+    else if (format === "md")
+      payload = { format, defaultName, content: buildMd(d) };
+    else
+      payload = { format, defaultName, content: buildHtml(d, { cover: await exportCover(d) }) };
+  }
   const saved = await window.neo.exportSave(payload);
   if (saved) toast("Exported: " + saved.split("/").pop());
 }
@@ -7842,6 +7928,7 @@ window.neo.onMenu(async (msg) => {
   if (msg.type === "spellcheck") toggleSpellcheck();
   if (msg.type === "revisionPass") toggleRevisionPass();
   if (msg.type === "readAloud") toggleReadAloud();
+  if (msg.type === "endMatter") openEndMatter();
   if (msg.type === "typewriter") toggleTypewriter();
   if (msg.type === "import") importBooks();
   if (msg.type === "stats") openStats();
