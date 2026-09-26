@@ -495,6 +495,13 @@ body.typewriter #paper { margin-bottom: 60vh; }
   text-decoration-skip-ink: none;
   background-color: color-mix(in srgb, var(--danger) 16%, transparent);
 }
+/* Revision pass (Edit → Revision Pass): four quiet marks, gone on Esc */
+::highlight(neo-rev-echo) { text-decoration: underline dotted var(--accent); text-decoration-thickness: 2px; text-underline-offset: 3px; }
+::highlight(neo-rev-filler) { background-color: color-mix(in srgb, var(--accent) 22%, transparent); }
+::highlight(neo-rev-adverb) { text-decoration: underline solid color-mix(in srgb, var(--accent) 70%, transparent); text-underline-offset: 3px; }
+::highlight(neo-rev-name) { background-color: color-mix(in srgb, var(--danger) 18%, transparent); text-decoration: underline double var(--danger); }
+.spell-menu.revision-menu { max-width: 340px; }
+.spell-menu.revision-menu button:disabled { color: var(--ui-text-soft); font-style: normal; white-space: normal; }
 .spell-menu {
   position: fixed; z-index: 300; min-width: 170px;
   background: var(--surface); border: 1px solid var(--line); border-radius: 8px;

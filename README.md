@@ -23,6 +23,10 @@ Your library looks like a bookshelf, not a file list. Labeled shelves you organi
 
 There's a white page by default or a dark mode (which I now prefer!). Controls fade until you mouse over them. Chapters number and renumber themselves automatically. Drop caps mark chapter openings, because I'm a sucker for drop-caps. Em dashes, true ellipses, and curly quotes sort themselves out as you type. Spellcheck exists only when you invoke it — no more red squiggles mid-sentence triggering your imposter syndrome.
 
+**Revision pass**
+
+When you're editing, not drafting: Edit → Revision Pass (⌘⇧;) marks echoes (the same word again within a few lines), filler words, -ly adverbs, and names spelled differently from how you usually spell them. Right-click a mark to see why it's there. Esc puts it all away. Nothing shows until you ask.
+
 **Enter, Enter, Enter** 
 
 One Enter: new paragraph. Two: a `***` section break. Three: a new chapter. The goal is to KEEP WRITING.

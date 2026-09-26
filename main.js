@@ -1572,6 +1572,11 @@ function buildMenu() {
           label: 'Spellcheck Pass',
           accelerator: 'CmdOrCtrl+;',
           click: () => sendToWindow({ type: 'spellcheck' })
+        },
+        {
+          label: 'Revision Pass',
+          accelerator: 'CmdOrCtrl+Shift+;',
+          click: () => sendToWindow({ type: 'revisionPass' })
         }
       ]
     },
