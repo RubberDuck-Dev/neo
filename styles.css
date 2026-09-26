@@ -489,6 +489,23 @@ body.typewriter #paper { margin-bottom: 60vh; }
 .history-list { max-height: 320px; overflow-y: auto; border-top: 1px solid color-mix(in srgb, var(--paper-muted) 30%, transparent); }
 .history-row { display: flex; justify-content: space-between; align-items: center; gap: 16px; padding: 10px 2px; border-bottom: 1px solid color-mix(in srgb, var(--paper-muted) 20%, transparent); font-size: 13px; }
 .history-row small { color: var(--paper-muted); }
+.history-actions { display: flex; gap: 10px; align-items: center; }
+.history-actions .btn-quiet { color: var(--accent); }
+/* Compare a version with now */
+.compare-modal { width: min(760px, 92vw); }
+.compare-list { max-height: 60vh; overflow-y: auto; border-top: 1px solid color-mix(in srgb, var(--paper-muted) 30%, transparent); }
+.compare-ch { border-bottom: 1px solid color-mix(in srgb, var(--paper-muted) 20%, transparent); }
+.compare-ch summary { display: flex; justify-content: space-between; gap: 16px; padding: 10px 2px; cursor: pointer; font-size: 13px; list-style: none; }
+.compare-ch summary::-webkit-details-marker { display: none; }
+.compare-ch summary small { color: var(--paper-muted); }
+.compare-body { font-family: var(--body-font); font-size: 14px; line-height: 1.6; padding: 0 4px 12px; }
+.compare-body p { margin: 0 0 0.6em; }
+.compare-body .cmp-same { color: var(--paper-muted); }
+.compare-body .cmp-gap { color: var(--paper-muted); text-align: center; }
+.compare-body .cmp-ins, .compare-modal ins { background: color-mix(in srgb, #4caf50 22%, transparent); text-decoration: none; }
+.compare-body .cmp-del, .compare-modal del { background: color-mix(in srgb, var(--danger) 18%, transparent); text-decoration: line-through; text-decoration-color: color-mix(in srgb, var(--danger) 70%, transparent); }
+.cmp-plus { color: #6fbf73; }
+.cmp-minus { color: var(--danger); }
 /* NEO's spellcheck pass: flagged words, painted like search matches */
 ::highlight(neo-spell) {
   text-decoration: underline wavy var(--danger);

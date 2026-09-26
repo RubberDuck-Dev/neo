@@ -755,6 +755,21 @@ ipcMain.handle('history:checkpoint', async (_e, bookId, reason) => {
   return checkpoint;
 });
 
+// A checkpoint's manuscript, for comparing with the current one. Read-only;
+// the checkpoint is verified first so a damaged copy never looks like truth.
+ipcMain.handle('history:read', async (_e, bookId, checkpointId) => {
+  const checked = await verifyCheckpoint(bookId, checkpointId);
+  if (!checked.valid) throw new Error(`That version can’t be read: ${checked.error || 'invalid manifest'}`);
+  const dir = checkpointPath(bookId, checkpointId);
+  const meta = readJSON(path.join(dir, 'book.json'), {});
+  const chapters = {};
+  for (const file of checked.manifest.files) {
+    const m = /^chapters\/([^/]+)\.html$/.exec(file.path);
+    if (m) chapters[m[1]] = await fs.promises.readFile(path.join(dir, file.path), 'utf8');
+  }
+  return { createdAt: checked.manifest.createdAt, meta, chapters };
+});
+
 ipcMain.handle('history:list', async (_e, bookId) => {
   return listCheckpoints(bookId);
 });

@@ -20,6 +20,7 @@ contextBridge.exposeInMainWorld('neo', {
   writeJSON: (bookId, name, data) => ipcRenderer.invoke('json:write', bookId, name, data),
   createCheckpoint: (bookId, reason) => ipcRenderer.invoke('history:checkpoint', bookId, reason),
   listCheckpoints: (bookId) => ipcRenderer.invoke('history:list', bookId),
+  readCheckpoint: (bookId, checkpointId) => ipcRenderer.invoke('history:read', bookId, checkpointId),
   restoreCheckpoint: (bookId, checkpointId) => ipcRenderer.invoke('history:restore', bookId, checkpointId),
   flushComplete: () => ipcRenderer.send('save:flushComplete'),
   gitStatus: () => ipcRenderer.invoke('git:status'),
