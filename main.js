@@ -6,6 +6,9 @@ const { app, BrowserWindow, ipcMain, dialog, Menu, MenuItem } = require('electro
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
+const crypto = require('crypto');
+const { execFile } = require('child_process');
+const flushAcknowledgements = new Map();
 
 // macOS Chromium's "smart delete" also removes whitespace around a deleted
 // selection, and that pass can duplicate characters. Deletes stay literal.
@@ -73,10 +76,301 @@ function readJSON(file, fallback) {
   }
 }
 
+function atomicWrite(file, data) {
+  const tmp = path.join(
+    path.dirname(file),
+    `.${path.basename(file)}.${process.pid}.${Date.now()}.tmp`,
+  );
+  let fd;
+  try {
+    fd = fs.openSync(tmp, 'w');
+    fs.writeFileSync(fd, data);
+    fs.fsyncSync(fd);
+  } finally {
+    if (fd !== undefined) fs.closeSync(fd);
+  }
+  fs.renameSync(tmp, file);
+}
+
+async function atomicWriteAsync(file, data) {
+  const tmp = path.join(path.dirname(file), `.${path.basename(file)}.${process.pid}.${Date.now()}.${Math.random().toString(36).slice(2)}.tmp`);
+  let handle;
+  try {
+    handle = await fs.promises.open(tmp, 'w');
+    await handle.writeFile(data);
+    await handle.sync();
+  } finally {
+    if (handle) await handle.close();
+  }
+  try {
+    await fs.promises.rename(tmp, file);
+  } catch (err) {
+    await fs.promises.rm(tmp, { force: true });
+    throw err;
+  }
+}
+
 function writeJSON(file, data) {
-  const tmp = file + '.tmp';
-  fs.writeFileSync(tmp, JSON.stringify(data, null, 2));
-  fs.renameSync(tmp, file); // atomic-ish: never leave a half-written file
+  atomicWrite(file, JSON.stringify(data, null, 2));
+}
+
+// Calls from a renderer are asynchronous. Serializing every write for a book
+// prevents an older debounce from landing after a newer edit, and gives a
+// checkpoint a coherent point in the book's on-disk history.
+const bookWriteQueues = new Map();
+function queueBookWrite(bookId, work) {
+  const previous = bookWriteQueues.get(bookId) || Promise.resolve();
+  const next = previous.catch(() => {}).then(work);
+  bookWriteQueues.set(bookId, next);
+  next.catch((err) => logError('book-save', err));
+  return next;
+}
+
+async function drainBookWrites() {
+  await Promise.allSettled([...bookWriteQueues.values()]);
+}
+
+function runGit(args) {
+  return new Promise((resolve, reject) => {
+    execFile('git', args, { cwd: LIBRARY_DIR, windowsHide: true }, (error, stdout, stderr) => {
+      if (error) {
+        error.stdout = stdout;
+        error.stderr = stderr;
+        reject(error);
+      } else resolve({ stdout: stdout.trim(), stderr: stderr.trim() });
+    });
+  });
+}
+
+async function libraryGitStatus() {
+  try {
+    await runGit(['--version']);
+  } catch {
+    return { available: false, initialized: false };
+  }
+  try {
+    const inside = await runGit(['rev-parse', '--is-inside-work-tree']);
+    if (inside.stdout !== 'true') return { available: true, initialized: false };
+    const [branch, remote, status] = await Promise.all([
+      runGit(['branch', '--show-current']),
+      runGit(['remote', 'get-url', 'origin']).catch(() => ({ stdout: '' })),
+      runGit(['status', '--porcelain'])
+    ]);
+    return { available: true, initialized: true, branch: branch.stdout || 'main', remote: remote.stdout || null, clean: !status.stdout };
+  } catch {
+    return { available: true, initialized: false };
+  }
+}
+
+async function initializeLibraryGit(authorName = 'NEO Writer', authorEmail = 'writer@neo.local') {
+  const status = await libraryGitStatus();
+  if (!status.available) throw new Error('Git is not installed');
+  if (!status.initialized) await runGit(['init', '-b', 'main']);
+  const ignore = [
+    '# NEO keeps these locally; Git commits are the portable history.',
+    '.neo-history/',
+    'Backups/',
+    'Exports/',
+    'neo-errors.log',
+    '.DS_Store',
+    ''
+  ].join('\n');
+  atomicWrite(path.join(LIBRARY_DIR, '.gitignore'), ignore);
+  if (authorName) await runGit(['config', 'user.name', authorName]);
+  if (authorEmail) await runGit(['config', 'user.email', authorEmail]);
+  await runGit(['add', '--all']);
+  try {
+    await runGit(['diff', '--cached', '--quiet']);
+  } catch (err) {
+    if (err.code !== 1) throw err;
+    await runGit(['commit', '-m', 'NEO library baseline']);
+  }
+  return libraryGitStatus();
+}
+
+async function ensureLibraryGitMainBranch() {
+  const status = await libraryGitStatus();
+  if (!status.initialized || status.branch === 'main') return status;
+  await runGit(['branch', '-M', 'main']);
+  return libraryGitStatus();
+}
+
+async function connectLibraryGitRemote(remoteUrl) {
+  if (!/^(https:\/\/github\.com\/|git@github\.com:)[\w.-]+\/[\w.-]+(?:\.git)?\/?$/i.test(String(remoteUrl || ''))) {
+    throw new Error('Enter a GitHub repository URL');
+  }
+  const status = await libraryGitStatus();
+  if (!status.initialized) await initializeLibraryGit();
+  await ensureLibraryGitMainBranch();
+  if (status.remote) await runGit(['remote', 'set-url', 'origin', remoteUrl]);
+  else await runGit(['remote', 'add', 'origin', remoteUrl]);
+  return libraryGitStatus();
+}
+
+async function pushLibraryGit() {
+  const status = await ensureLibraryGitMainBranch();
+  if (!status.remote) throw new Error('Connect a GitHub repository first');
+  await runGit(['push', '--set-upstream', 'origin', 'HEAD']);
+  return libraryGitStatus();
+}
+
+let libraryGitQueue = Promise.resolve();
+function queueGitCommit(reason) {
+  const work = async () => {
+    const prefs = readJSON(LIBRARY_FILE, {}).history?.git || {};
+    if (!prefs.enabled) return null;
+    const status = await ensureLibraryGitMainBranch();
+    if (!status.initialized) return null;
+    await runGit(['add', '--all']);
+    try {
+      await runGit(['diff', '--cached', '--quiet']);
+      return null;
+    } catch (err) {
+      if (err.code !== 1) throw err;
+    }
+    await runGit(['commit', '-m', `NEO checkpoint: ${reason}`]);
+    // Older NEO settings only had `git.enabled`; treat those as automatic
+    // backups too so an existing connection does not silently stop at local
+    // commits after the auto-push option was introduced.
+    if (prefs.autoPush !== false && status.remote) {
+      try {
+        await runGit(['push', '--set-upstream', 'origin', 'HEAD']);
+      } catch (err) {
+        logError('git-auto-push', err);
+        sendToWindow({ type: 'gitAutoPushError', message: err.stderr || err.message || 'GitHub push failed' });
+      }
+    }
+    return true;
+  };
+  libraryGitQueue = libraryGitQueue.catch(() => {}).then(work);
+  libraryGitQueue.catch((err) => logError('git-history', err));
+  return libraryGitQueue;
+}
+
+const HISTORY_DIR = '.neo-history';
+function historyDir(bookId) {
+  return path.join(bookDir(bookId), HISTORY_DIR);
+}
+
+async function copyCheckpointTree(source, destination, relative = '', files = []) {
+  for (const name of await fs.promises.readdir(source)) {
+    if (name === HISTORY_DIR || name.endsWith('.tmp')) continue;
+    const from = path.join(source, name);
+    const rel = relative ? path.join(relative, name) : name;
+    const to = path.join(destination, rel);
+    const stat = await fs.promises.stat(from);
+    if (stat.isDirectory()) {
+      await fs.promises.mkdir(to, { recursive: true });
+      await copyCheckpointTree(from, destination, rel, files);
+      continue;
+    }
+    const content = await fs.promises.readFile(from);
+    await atomicWriteAsync(to, content);
+    files.push({ path: rel.replace(/\\/g, '/'), sha256: crypto.createHash('sha256').update(content).digest('hex') });
+  }
+  return files;
+}
+
+async function pruneCheckpoints(dir) {
+  const now = Date.now();
+  const seenHours = new Set();
+  const seenDays = new Set();
+  const retentionDays = Math.max(1, Number(readJSON(LIBRARY_FILE, {}).history?.retentionDays) || 90);
+  const snapshots = (await fs.promises.readdir(dir, { withFileTypes: true }))
+    .filter((entry) => entry.isDirectory() && !entry.name.startsWith('.'))
+    .map((entry) => {
+      const full = path.join(dir, entry.name);
+      const manifest = readJSON(path.join(full, 'manifest.json'), null);
+      return { full, created: Date.parse(manifest && manifest.createdAt) || fs.statSync(full).mtimeMs };
+    })
+    .sort((a, b) => b.created - a.created);
+  for (const snapshot of snapshots) {
+    const age = now - snapshot.created;
+    const stamp = new Date(snapshot.created);
+    const hour = stamp.toISOString().slice(0, 13);
+    const day = stamp.toISOString().slice(0, 10);
+    const keep = age <= 24 * 60 * 60 * 1000 ||
+      (age <= 30 * 24 * 60 * 60 * 1000 && !seenHours.has(hour)) ||
+      (age <= retentionDays * 24 * 60 * 60 * 1000 && !seenDays.has(day));
+    seenHours.add(hour);
+    seenDays.add(day);
+    if (!keep) await fs.promises.rm(snapshot.full, { recursive: true, force: true });
+  }
+}
+
+async function createCheckpoint(bookId, reason = 'writing') {
+  const source = bookDir(bookId);
+  if (!fs.existsSync(source)) return null;
+  const dir = historyDir(bookId);
+  await fs.promises.mkdir(dir, { recursive: true });
+  const createdAt = new Date().toISOString();
+  const safeReason = String(reason).replace(/[^a-z0-9-]+/gi, '-').replace(/^-+|-+$/g, '').slice(0, 32) || 'writing';
+  const name = `${createdAt.replace(/[:.]/g, '-')}-${safeReason}-${Math.random().toString(36).slice(2, 7)}`;
+  const pending = path.join(dir, `.${name}.pending`);
+  const target = path.join(dir, name);
+  await fs.promises.mkdir(pending, { recursive: true });
+  try {
+    const files = await copyCheckpointTree(source, pending);
+    await atomicWriteAsync(path.join(pending, 'manifest.json'), JSON.stringify({ version: 1, createdAt, reason: safeReason, files }, null, 2));
+    await fs.promises.rename(pending, target);
+    await pruneCheckpoints(dir);
+    return { id: name, createdAt };
+  } catch (err) {
+    await fs.promises.rm(pending, { recursive: true, force: true });
+    throw err;
+  }
+}
+
+function checkpointPath(bookId, checkpointId) {
+  if (!/^[a-z0-9-]+$/i.test(checkpointId)) throw new Error('Invalid checkpoint id');
+  return path.join(historyDir(bookId), checkpointId);
+}
+
+async function verifyCheckpoint(bookId, checkpointId) {
+  const dir = checkpointPath(bookId, checkpointId);
+  const manifest = readJSON(path.join(dir, 'manifest.json'), null);
+  if (!manifest || !Array.isArray(manifest.files)) return { valid: false, manifest: null };
+  try {
+    for (const file of manifest.files) {
+      const rel = String(file.path || '');
+      if (!rel || rel.includes('..') || path.isAbsolute(rel)) throw new Error('Unsafe checkpoint path');
+      const content = await fs.promises.readFile(path.join(dir, rel));
+      if (crypto.createHash('sha256').update(content).digest('hex') !== file.sha256) throw new Error(`Checksum mismatch: ${rel}`);
+    }
+    return { valid: true, manifest };
+  } catch (err) {
+    return { valid: false, manifest, error: String(err.message || err) };
+  }
+}
+
+async function listCheckpoints(bookId) {
+  const dir = historyDir(bookId);
+  if (!fs.existsSync(dir)) return [];
+  const entries = await fs.promises.readdir(dir, { withFileTypes: true });
+  const list = [];
+  for (const entry of entries) {
+    if (!entry.isDirectory() || entry.name.startsWith('.')) continue;
+    const checked = await verifyCheckpoint(bookId, entry.name);
+    list.push({ id: entry.name, valid: checked.valid, error: checked.error || null, ...(checked.manifest || {}) });
+  }
+  return list.sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt));
+}
+
+async function restoreCheckpoint(bookId, checkpointId) {
+  const checked = await verifyCheckpoint(bookId, checkpointId);
+  if (!checked.valid) throw new Error(`Checkpoint cannot be restored: ${checked.error || 'invalid manifest'}`);
+  await createCheckpoint(bookId, 'before-restore');
+  const target = bookDir(bookId);
+  for (const name of await fs.promises.readdir(target)) {
+    if (name !== HISTORY_DIR) await fs.promises.rm(path.join(target, name), { recursive: true, force: true });
+  }
+  for (const file of checked.manifest.files) {
+    const destination = path.join(target, file.path);
+    await fs.promises.mkdir(path.dirname(destination), { recursive: true });
+    await atomicWriteAsync(destination, await fs.promises.readFile(path.join(checkpointPath(bookId, checkpointId), file.path)));
+  }
+  writeCatalog();
+  return { restored: checkpointId };
 }
 
 // ---------------------------------------------------------------------------
@@ -113,14 +407,18 @@ ipcMain.handle('book:create', (_e, meta) => {
     series: '',
     author: meta.author || 'Anonymous',
     wordGoal: 0,
+    goalDueDate: '',
+    goalChartMode: 'daily',
+    wordHistory: [],
+    dailyCounts: {},
     created: new Date().toISOString(),
     modified: new Date().toISOString(),
     chapterOrder: [],
     tabNames: { notes: 'Notes', outline: 'Outline' }
   };
   writeJSON(path.join(dir, 'book.json'), book);
-  fs.writeFileSync(path.join(dir, 'notes.html'), '');
-  fs.writeFileSync(path.join(dir, 'outline.html'), '');
+  atomicWrite(path.join(dir, 'notes.html'), '');
+  atomicWrite(path.join(dir, 'outline.html'), '');
   writeJSON(path.join(dir, 'darlings.json'), []);
   writeJSON(path.join(dir, 'stickies.json'), []);
   return book;
@@ -130,11 +428,13 @@ ipcMain.handle('book:readMeta', (_e, bookId) => {
   return readJSON(path.join(bookDir(bookId), 'book.json'), null);
 });
 
-ipcMain.handle('book:writeMeta', (_e, bookId, meta) => {
-  meta.modified = new Date().toISOString();
-  writeJSON(path.join(bookDir(bookId), 'book.json'), meta);
-  writeCatalog();
-  return true;
+ipcMain.handle('book:writeMeta', async (_e, bookId, meta) => {
+  return queueBookWrite(bookId, () => {
+    meta.modified = new Date().toISOString();
+    writeJSON(path.join(bookDir(bookId), 'book.json'), meta);
+    writeCatalog();
+    return true;
+  });
 });
 
 ipcMain.handle('chapter:read', (_e, bookId, chapterId) => {
@@ -146,17 +446,21 @@ ipcMain.handle('chapter:read', (_e, bookId, chapterId) => {
   }
 });
 
-ipcMain.handle('chapter:write', (_e, bookId, chapterId, html) => {
-  const dir = path.join(bookDir(bookId), 'chapters');
-  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-  fs.writeFileSync(path.join(dir, chapterId + '.html'), html);
-  return true;
+ipcMain.handle('chapter:write', async (_e, bookId, chapterId, html) => {
+  return queueBookWrite(bookId, () => {
+    const dir = path.join(bookDir(bookId), 'chapters');
+    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+    atomicWrite(path.join(dir, chapterId + '.html'), html);
+    return true;
+  });
 });
 
-ipcMain.handle('chapter:delete', (_e, bookId, chapterId) => {
-  const file = path.join(bookDir(bookId), 'chapters', chapterId + '.html');
-  if (fs.existsSync(file)) fs.unlinkSync(file);
-  return true;
+ipcMain.handle('chapter:delete', async (_e, bookId, chapterId) => {
+  return queueBookWrite(bookId, () => {
+    const file = path.join(bookDir(bookId), 'chapters', chapterId + '.html');
+    if (fs.existsSync(file)) fs.unlinkSync(file);
+    return true;
+  });
 });
 
 ipcMain.handle('aux:read', (_e, bookId, name) => {
@@ -169,19 +473,51 @@ ipcMain.handle('aux:read', (_e, bookId, name) => {
   }
 });
 
-ipcMain.handle('aux:write', (_e, bookId, name, html) => {
-  fs.writeFileSync(path.join(bookDir(bookId), name + '.html'), html);
-  return true;
+ipcMain.handle('aux:write', async (_e, bookId, name, html) => {
+  return queueBookWrite(bookId, () => {
+    atomicWrite(path.join(bookDir(bookId), name + '.html'), html);
+    return true;
+  });
 });
 
 ipcMain.handle('json:read', (_e, bookId, name, fallback) => {
   return readJSON(path.join(bookDir(bookId), name + '.json'), fallback);
 });
 
-ipcMain.handle('json:write', (_e, bookId, name, data) => {
-  writeJSON(path.join(bookDir(bookId), name + '.json'), data);
-  return true;
+ipcMain.handle('json:write', async (_e, bookId, name, data) => {
+  return queueBookWrite(bookId, () => {
+    writeJSON(path.join(bookDir(bookId), name + '.json'), data);
+    return true;
+  });
 });
+
+ipcMain.handle('history:checkpoint', async (_e, bookId, reason) => {
+  return queueBookWrite(bookId, async () => {
+    const checkpoint = await createCheckpoint(bookId, reason);
+    await queueGitCommit(reason);
+    return checkpoint;
+  });
+});
+
+ipcMain.handle('history:list', async (_e, bookId) => {
+  return listCheckpoints(bookId);
+});
+
+ipcMain.handle('history:restore', async (_e, bookId, checkpointId) => {
+  return queueBookWrite(bookId, async () => {
+    const restored = await restoreCheckpoint(bookId, checkpointId);
+    await queueGitCommit('restore');
+    return restored;
+  });
+});
+
+ipcMain.handle('git:status', () => libraryGitStatus());
+ipcMain.handle('git:initialize', async (_e, authorName, authorEmail) => {
+  await initializeLibraryGit(authorName, authorEmail);
+  return ensureLibraryGitMainBranch();
+});
+ipcMain.handle('git:connectRemote', (_e, remoteUrl) => connectLibraryGitRemote(remoteUrl));
+ipcMain.handle('git:push', () => pushLibraryGit());
 
 ipcMain.handle('book:delete', async (_e, bookId, title) => {
   const win = BrowserWindow.getFocusedWindow();
@@ -196,8 +532,10 @@ ipcMain.handle('book:delete', async (_e, bookId, title) => {
   if (response === 1) {
     const { shell } = require('electron');
     try {
-      await shell.trashItem(bookDir(bookId));
-      return true;
+      return queueBookWrite(bookId, async () => {
+        await shell.trashItem(bookDir(bookId));
+        return true;
+      });
     } catch (err) {
       // Some filesystems have no Trash (network mounts, odd drives).
       // Words are never lost: leave the book alone and show the writer where it lives.
@@ -639,16 +977,19 @@ async function dailyBackup() {
     ensureLibrary();
     const backupsDir = path.join(LIBRARY_DIR, 'Backups');
     if (!fs.existsSync(backupsDir)) fs.mkdirSync(backupsDir, { recursive: true });
-    const today = new Date().toISOString().slice(0, 10);
+    const now = new Date();
+    const dayEndsAt = Math.max(0, Math.min(23, Number(readJSON(LIBRARY_FILE, {}).dayEndsAt) || 0));
+    now.setHours(now.getHours() - dayEndsAt);
+    const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
     const target = path.join(backupsDir, `neo-backup-${today}.zip`);
     if (fs.existsSync(target)) return;
 
     const JSZip = require('jszip');
     const zip = new JSZip();
-    const skip = new Set(['Backups', 'Exports']);
+    const skip = new Set(['Backups', 'Exports', HISTORY_DIR]);
     const walk = (dir, rel) => {
       for (const name of fs.readdirSync(dir)) {
-        if (rel === '' && skip.has(name)) continue;
+        if (skip.has(name)) continue;
         const full = path.join(dir, name);
         const relPath = rel ? rel + '/' + name : name;
         const stat = fs.statSync(full);
@@ -657,7 +998,9 @@ async function dailyBackup() {
       }
     };
     walk(LIBRARY_DIR, '');
-    fs.writeFileSync(target, await zip.generateAsync({ type: 'nodebuffer', compression: 'DEFLATE' }));
+    const archive = await zip.generateAsync({ type: 'nodebuffer', compression: 'DEFLATE' });
+    await JSZip.loadAsync(archive); // validate before replacing or pruning backups
+    atomicWrite(target, archive);
 
     // prune old backups
     const backups = fs.readdirSync(backupsDir).filter((f) => f.startsWith('neo-backup-')).sort();
@@ -690,10 +1033,47 @@ function createWindow() {
   });
   win.loadFile('index.html');
 
+  // The renderer flushes its in-memory chapter state first; only then do we
+  // let Electron close. This gives queued, atomic writes a chance to finish.
+  let savingOnClose = false;
+  let allowClose = false;
+  win.on('close', (event) => {
+    if (allowClose) return;
+    event.preventDefault();
+    if (savingOnClose) return;
+    savingOnClose = true;
+    const flushed = new Promise((resolve) => {
+      let timeout;
+      const finish = () => {
+        clearTimeout(timeout);
+        if (flushAcknowledgements.get(win.id) === finish) flushAcknowledgements.delete(win.id);
+        resolve();
+      };
+      flushAcknowledgements.set(win.id, finish);
+      timeout = setTimeout(finish, 1000); // renderer may already be gone; never trap a writer in the window
+    });
+    win.webContents.send('menu', { type: 'flush' });
+    flushed.then(() => {
+      drainBookWrites().catch((err) => logError('shutdown-save', err)).finally(() => {
+        allowClose = true;
+        win.close();
+      });
+    });
+  });
+
   // NEO does its own spellchecking (see spell:* handlers) — the engine's
   // checker proved unreliable at scanning existing text, so it stays off
   win.webContents.session.setSpellCheckerEnabled(false);
 }
+
+ipcMain.on('save:flushComplete', (event) => {
+  const win = BrowserWindow.fromWebContents(event.sender);
+  const resolve = win && flushAcknowledgements.get(win.id);
+  if (resolve) {
+    flushAcknowledgements.delete(win.id);
+    resolve();
+  }
+});
 
 // ---------------------------------------------------------------------------
 // Spellcheck: NEO's own dictionary (Hunspell en-US via nspell), identical on
@@ -778,9 +1158,10 @@ function buildMenu() {
           click: () => sendToWindow({ type: 'emailDraft' })
         },
         { label: 'Email Settings…', click: () => sendToWindow({ type: 'emailSettings' }) },
+        { label: 'Sync Settings…', click: () => sendToWindow({ type: 'syncSettings' }) },
         { label: 'Cover Art…', click: () => sendToWindow({ type: 'coverArt' }) },
         {
-          label: isMac ? 'Goals & Settings…' : 'Goals && Settings…',
+          label: isMac ? 'Progress & Settings…' : 'Progress && Settings…',
           accelerator: 'CmdOrCtrl+,',
           click: () => sendToWindow({ type: 'stats' })
         },
@@ -889,6 +1270,12 @@ function buildMenu() {
           label: 'Brighter Interface',
           click: () => sendToWindow({ type: 'uiBright' })
         }
+      ]
+    },
+    {
+      label: 'Plugins',
+      submenu: [
+        { label: 'Plugin Library…', accelerator: 'CmdOrCtrl+Shift+P', click: () => sendToWindow({ type: 'plugins' }) }
       ]
     },
     { role: 'windowMenu' },
@@ -1036,6 +1423,7 @@ app.whenReady().then(() => {
     try { initSpell(); } catch (err) { logError('spell', err); }
     try { buildMenu(); } catch (err) { logError('menu', err); }
     try { dailyBackup(); } catch (err) { logError('backup', err); }
+    setInterval(() => { dailyBackup(); }, 60 * 60 * 1000);
     try { checkForUpdates(); } catch (err) { logError('updater', err); }
   } catch (err) {
     // catastrophic: tell the human instead of dying in silence

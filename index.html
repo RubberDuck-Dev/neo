@@ -15,6 +15,7 @@
       <h1>NEO</h1>
       <div class="shelf-header-right">
         <span id="author-chip" title="Click to change your author name"></span>
+        <button id="plugins-btn" title="Add tools for this author">✦ Plugins</button>
         <button id="import-btn" title="Import .docx, .txt, or .md manuscripts">&#8681; Import</button>
         <button id="add-shelf-btn" title="Add a shelf">+ Shelf</button>
       </div>
@@ -71,6 +72,10 @@
     <!-- Left hover zone: chapter navigation -->
     <div id="nav-hotzone"></div>
     <nav id="nav-pane">
+      <div id="nav-head">
+        <span>Chapters</span>
+        <button id="nav-pin" title="Keep this pane open">&#9737;</button>
+      </div>
       <div id="nav-list"></div>
       <button id="nav-add" title="Add a chapter at the end">+ Chapter</button>
     </nav>
@@ -80,7 +85,7 @@
     <aside id="side-pane">
       <div id="side-head">
         <span>Notes &amp; Comments</span>
-        <button id="side-pin" title="Keep this pane open">&#9737;</button>
+        <div class="pane-actions"><button id="side-filter" title="Show resolved notes too">Pending</button><button id="side-pin" title="Keep this pane open">&#9737;</button></div>
       </div>
       <div id="sticky-list"></div>
     </aside>
@@ -101,6 +106,7 @@
         <div id="aux-editor" contenteditable="true" spellcheck="false"></div>
         <div id="outline-list" hidden></div>
         <div id="darlings-list" hidden></div>
+        <div id="cards-list" hidden></div>
       </div>
     </main>
 
@@ -112,9 +118,11 @@
         <div class="tab" data-tab="notes">Notes</div>
         <div class="tab" data-tab="outline">Outline</div>
         <div class="tab darlings" data-tab="darlings" title="Drag any selection here. It's saved, not gone.">Darlings</div>
+        <div class="tab plugin-tab" data-tab="cards" hidden>Cards</div>
       </div>
       <div id="counters">
         <span id="goal-counter" title="Today's words — click for goals, sprints, and your progress chart"></span>
+        <span id="sprint-controls" hidden><button id="sprint-pause" title="Pause timer">&#10074;&#10074;</button><button id="sprint-stop" title="Stop timer">&#9209;</button></span>
         <span id="pos-counter"></span>
         <span id="word-counter" title="Click to cycle book / chapter word count"></span>
         <span id="zoom-control" title="Scroll to zoom, or pinch / Ctrl+Scroll anywhere on the page"><button id="zoom-out" title="Zoom out">&#8722;</button><span id="zoom-level" title="Click to reset to 100%">100%</span><button id="zoom-in" title="Zoom in">+</button></span>

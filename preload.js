@@ -18,6 +18,14 @@ contextBridge.exposeInMainWorld('neo', {
 
   readJSON: (bookId, name, fallback) => ipcRenderer.invoke('json:read', bookId, name, fallback),
   writeJSON: (bookId, name, data) => ipcRenderer.invoke('json:write', bookId, name, data),
+  createCheckpoint: (bookId, reason) => ipcRenderer.invoke('history:checkpoint', bookId, reason),
+  listCheckpoints: (bookId) => ipcRenderer.invoke('history:list', bookId),
+  restoreCheckpoint: (bookId, checkpointId) => ipcRenderer.invoke('history:restore', bookId, checkpointId),
+  flushComplete: () => ipcRenderer.send('save:flushComplete'),
+  gitStatus: () => ipcRenderer.invoke('git:status'),
+  initializeGit: (authorName, authorEmail) => ipcRenderer.invoke('git:initialize', authorName, authorEmail),
+  connectGitRemote: (remoteUrl) => ipcRenderer.invoke('git:connectRemote', remoteUrl),
+  pushGit: () => ipcRenderer.invoke('git:push'),
 
   exportSave: (payload) => ipcRenderer.invoke('export:save', payload),
   emailDraft: (payload) => ipcRenderer.invoke('email:draft', payload),
