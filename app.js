@@ -487,6 +487,11 @@ function openPlugins() {
     const wasInstalled = installed.includes(id);
     if (wasInstalled) author.plugins = installed.filter((p) => p !== id);
     else installed.push(id);
+    // Git backup covers the whole library, so removing the plugin must
+    // actually stop it rather than just hiding the button.
+    if (id === "github" && wasInstalled && library.history && library.history.git) {
+      library.history.git = { ...library.history.git, enabled: false, autoPush: false };
+    }
     await window.neo.writeLibrary(library);
     applyPluginAppearance();
     if (id === "storyMap" && currentTab === "outline") renderOutline();
@@ -1456,20 +1461,12 @@ function renderChapters() {
     titleSpan.addEventListener("input", () => {
       head.classList.toggle("has-title", titleSpan.textContent.trim() !== "");
     });
-<<<<<<< Updated upstream
     titleSpan.addEventListener('keydown', (e) => {
       if (e.key === 'Enter' && e.shiftKey) {
         e.preventDefault();
         titleSpan.blur();
         poetryUnderHeading(sec.querySelector('.chapter-body'), chId);
       } else if (e.key === 'Enter') { e.preventDefault(); titleSpan.blur(); }
-=======
-    titleSpan.addEventListener("keydown", (e) => {
-      if (e.key === "Enter") {
-        e.preventDefault();
-        titleSpan.blur();
-      }
->>>>>>> Stashed changes
       e.stopPropagation();
     });
     titleSpan.addEventListener("blur", () => {
@@ -1541,6 +1538,7 @@ function refreshChapterOpening(body) {
       el.tagName === "P" &&
       !el.classList.contains("scene-break") &&
       !el.classList.contains("ghost") &&
+      !el.classList.contains("poetry") &&
       /\S/.test(el.textContent),
   );
   if (!opening) return;
@@ -2161,7 +2159,6 @@ function handleEnter(e, body, chId) {
   if (el.nodeType === Node.TEXT_NODE) el = el.parentElement;
   const block = el && el.closest ? el.closest("p") : null;
   if (!block || !body.contains(block)) return false;
-<<<<<<< Updated upstream
   if (block.classList.contains('scene-break')) { e.preventDefault(); return true; } // Enter on a *** line: nothing
   // Enter in a poetry paragraph steps back into prose: an empty line becomes
   // an ordinary paragraph in place; otherwise the line splits and the new
@@ -2189,12 +2186,6 @@ function handleEnter(e, body, chId) {
     syncChapter(body, chId);
     return true;
   }
-=======
-  if (block.classList.contains("scene-break")) {
-    e.preventDefault();
-    return true;
-  } // Enter on a *** line: nothing
->>>>>>> Stashed changes
   const prev = block.previousElementSibling;
 
   if (block.textContent.trim() !== "") {
@@ -2501,6 +2492,7 @@ function captureBody(body) {
 }
 
 function syncChapter(body, chId) {
+  refreshChapterOpening(body); // poetry toggles can move the chapter's opening paragraph
   chapterHTML[chId] = captureBody(body);
   wordCache[chId] = null;
   scheduleChapterSave(chId);
@@ -2510,15 +2502,9 @@ function syncChapter(body, chId) {
 
 // Heal text-node fragmentation in each paragraph as the caret leaves it:
 let lastCaretPara = null;
-<<<<<<< Updated upstream
-let capOffBody = null;
 let menuPoetryState = false;
 document.addEventListener('selectionchange', () => {
   if (!book || currentTab !== 'manuscript') return;
-=======
-document.addEventListener("selectionchange", () => {
-  if (!book || currentTab !== "manuscript") return;
->>>>>>> Stashed changes
   const sel = window.getSelection();
   let caretP = null;
   if (sel && sel.rangeCount) {
@@ -2544,27 +2530,15 @@ document.addEventListener("selectionchange", () => {
   }
   // during a spellcheck pass, each chapter scans as the caret arrives
   if (spellOn && caretP) {
-<<<<<<< Updated upstream
     const ch = caretP.closest('.chapter');
     if (ch) scanSpellingIn(ch.querySelector('.chapter-body'), ch.dataset.id);
   }
-  // the drop cap steps aside while the caret is in the first paragraph
+  // keep the Format menu's Poetry Paragraph check in step with the caret
+  // (the drop cap's cap-off is handled per edit in the beforeinput handler)
   const inPoetry = !!(caretP && caretP.classList.contains('poetry'));
   if (inPoetry !== menuPoetryState && window.neo.poetryState) {
     menuPoetryState = inPoetry;
     window.neo.poetryState(inPoetry);
-  }
-  const inFirst = caretP && caretP.parentElement &&
-    caretP === caretP.parentElement.querySelector('p:not(.poetry)');
-  const capBody = inFirst ? caretP.parentElement : null;
-  if (capBody !== capOffBody) {
-    if (capOffBody && capOffBody.isConnected) capOffBody.classList.remove('cap-off');
-    if (capBody) capBody.classList.add('cap-off');
-    capOffBody = capBody;
-=======
-    const ch = caretP.closest(".chapter");
-    if (ch) scanSpellingIn(ch.querySelector(".chapter-body"), ch.dataset.id);
->>>>>>> Stashed changes
   }
 });
 
@@ -4320,8 +4294,18 @@ function checkpointInterval() {
   return Math.min(60, Math.max(5, minutes)) * 60 * 1000;
 }
 
+// Versions feed both local history and the GitHub backup; either one being
+// on is reason enough to make them.
+function versionsWanted() {
+  const settings = historySettings();
+  return settings.enabled !== false || !!(settings.git && settings.git.enabled);
+}
+
 function checkpointNow(reason, bookId = book && book.id) {
-  if (!book || !bookId || book.id !== bookId || historySettings().enabled === false) return;
+  if (!book || !bookId || book.id !== bookId || !versionsWanted()) return;
+  if (typeof window.neo.createCheckpoint !== "function") return; // NEO Pocket has no version history
+  clearTimeout(checkpointTimer);
+  checkpointTimer = null;
   // The main process queues these writes before the checkpoint request, so a
   // checkpoint always captures one coherent on-disk state.
   flushAllSaves();
@@ -4333,12 +4317,19 @@ function checkpointNow(reason, bookId = book && book.id) {
 }
 
 function scheduleCheckpoint(reason) {
-  if (!book || historySettings().enabled === false || checkpointTimer) return;
+  if (!book || !versionsWanted() || checkpointTimer) return;
   const bookId = book.id;
   checkpointTimer = setTimeout(() => {
     checkpointTimer = null;
     checkpointNow(reason, bookId);
   }, checkpointInterval());
+}
+
+// Leaving a book (or quitting) captures the writing since the last version
+// instead of dropping it when the timer's book is gone.
+function finishPendingCheckpoint(reason) {
+  if (!checkpointTimer) return;
+  checkpointNow(reason);
 }
 
 function scheduleChapterSave(chId) {
@@ -4399,6 +4390,7 @@ setInterval(() => {
 
 async function backToShelf() {
   flushAllSaves();
+  finishPendingCheckpoint("closed book");
   tabPlaces = {};
   dirtyChapters = new Set();
   metaSavePending = false;
@@ -4508,9 +4500,15 @@ function resetNativeUndo() {
   restoreCaret(caret);
 }
 
+// Destructive operations get a version right away; routine structure
+// (section breaks, poetry lines, splits) rides the normal timer so Enter
+// doesn't turn into a full copy and a GitHub push.
+const IMMEDIATE_VERSION_LABELS = new Set(["chapter delete", "chapters merged", "replace all", "darling delete"]);
+
 function snapshotStructure(label, opts) {
   if (!book) return;
-  checkpointNow(label, book.id);
+  if (IMMEDIATE_VERSION_LABELS.has(label)) checkpointNow(label, book.id);
+  else scheduleCheckpoint("writing");
   undoStack.push({
     label,
     rejoin: !!(opts && opts.rejoin),
@@ -4571,20 +4569,10 @@ function rejoinAtCaret() {
   const body = blk && blk.closest(".chapter-body");
   if (!blk || !body) return;
   const prev = blk.previousElementSibling;
-<<<<<<< Updated upstream
   if (!prev || prev.tagName !== 'P') return;
   if (prev.classList.contains('scene-break') || blk.classList.contains('scene-break')) return;
   if (prev.classList.contains('poetry') !== blk.classList.contains('poetry')) return;
   const chId = body.closest('.chapter').dataset.id;
-=======
-  if (!prev || prev.tagName !== "P") return;
-  if (
-    prev.classList.contains("scene-break") ||
-    blk.classList.contains("scene-break")
-  )
-    return;
-  const chId = body.closest(".chapter").dataset.id;
->>>>>>> Stashed changes
   const at = prev.textContent.length;
   if (blk.textContent.trim() === "") {
     blk.remove();
@@ -5711,9 +5699,10 @@ function openSyncSettings() {
     try {
       const current = await window.neo.gitStatus();
       if (!current.available) return showGitStatus("Git is not installed.", true);
-      if (!current.initialized) return showGitStatus("Local Git history has not been set up.");
+      if (!current.initialized) return showGitStatus(current.parentRepo ? "Not connected yet. (Your library sits inside another Git repository; NEO will make its own.)" : "Not connected yet.");
       const remote = current.remote ? "GitHub connected." : "Local history ready; GitHub not connected.";
-      showGitStatus(`${remote} ${current.clean ? "Up to date." : "Changes waiting to be committed."}`);
+      const auto = git.enabled && git.autoPush !== false;
+      showGitStatus(`${remote} ${current.remote && !auto ? "Automatic backup is off." : current.clean ? "Up to date." : "New writing will be backed up with the next version."}`);
     } catch (err) {
       showGitStatus(err.message || "Could not check Git status.", true);
     }
@@ -5723,51 +5712,62 @@ function openSyncSettings() {
   bd.querySelectorAll(".m-cancel").forEach((button) => {
     button.onclick = () => bd.remove();
   });
-  bd.querySelector(".m-ok").onclick = async () => {
-    library.history = {
-      ...settings,
+  // Everything the dialog shows, as settings; used by Save and by Connect.
+  const readForm = () => {
+    const auto = bd.querySelector("#sy-git-enabled").checked;
+    return {
+      ...(library.history || {}),
       enabled: bd.querySelector("#sy-history-enabled").checked,
       intervalMinutes: Number(bd.querySelector("#sy-history-interval").value),
       retentionDays: Number(bd.querySelector("#sy-history-retention").value),
       git: {
-        ...git,
-        enabled: bd.querySelector("#sy-git-enabled").checked,
-        autoPush: bd.querySelector("#sy-git-enabled").checked,
+        ...((library.history && library.history.git) || {}),
+        enabled: auto,
+        autoPush: auto,
         remoteUrl: bd.querySelector("#sy-git-remote").value.trim()
       }
     };
+  };
+  const saveForm = async () => {
+    library.history = readForm();
     await window.neo.writeLibrary(library);
+  };
+  const withBusy = async (button, work) => {
+    const buttons = bd.querySelectorAll("#sy-git-connect, #sy-git-push");
+    buttons.forEach((b) => (b.disabled = true));
+    try { await work(); } finally { buttons.forEach((b) => (b.disabled = false)); }
+  };
+  bd.querySelector(".m-ok").onclick = async () => {
+    await saveForm();
     bd.remove();
     toast("Sync settings saved");
   };
-  bd.querySelector("#sy-git-connect").onclick = async () => {
+  bd.querySelector("#sy-git-connect").onclick = (e) => withBusy(e.currentTarget, async () => {
     try {
       const remoteUrl = bd.querySelector("#sy-git-remote").value.trim();
+      showGitStatus("Connecting…");
       await window.neo.connectGitRemote(remoteUrl);
+      // Connecting is the request for backups: turn automatic backup on
+      // rather than leaving it off because the box wasn't ticked first.
+      bd.querySelector("#sy-git-enabled").checked = true;
+      await saveForm();
+      showGitStatus("Uploading…");
       await window.neo.pushGit();
-      library.history = {
-        ...settings,
-        git: {
-          ...git,
-          enabled: bd.querySelector("#sy-git-enabled").checked,
-          autoPush: bd.querySelector("#sy-git-enabled").checked,
-          remoteUrl
-        }
-      };
-      await window.neo.writeLibrary(library);
-      showGitStatus("Connected and backed up to GitHub.");
+      showGitStatus("Connected. Automatic backups are on.");
     } catch (err) {
       showGitStatus(err.message || "Could not connect GitHub.", true);
     }
-  };
-  bd.querySelector("#sy-git-push").onclick = async () => {
+  });
+  bd.querySelector("#sy-git-push").onclick = (e) => withBusy(e.currentTarget, async () => {
     try {
+      flushAllSaves();
+      showGitStatus("Uploading…");
       await window.neo.pushGit();
-      showGitStatus("Backup pushed to GitHub.");
+      showGitStatus("Backed up to GitHub just now.");
     } catch (err) {
-      showGitStatus(err.message || "Could not push to GitHub.", true);
+      showGitStatus(err.message || "Could not back up to GitHub.", true);
     }
-  };
+  });
   const versions = bd.querySelector("#sy-history-versions");
   if (versions) versions.onclick = () => openVersionHistory(book.id);
   bd.addEventListener("keydown", (e) => {
@@ -6055,7 +6055,6 @@ function showHelp() {
 
       <div class="help-sec">Writing</div>
       <div class="help-grid">
-<<<<<<< Updated upstream
         ${row('Enter ×2', 'Section break (***)')}
         ${row('Enter ×3', 'New chapter, auto-numbered')}
         ${row('⇧Enter', 'Poetry paragraph — verse, a quote, a POV name; italic, set in from the margins. ⇧Enter again continues it; Enter returns to prose')}
@@ -6064,15 +6063,6 @@ function showHelp() {
         ${row(KZ, 'Undo big moves (chapter deletes, replace-all, darlings) when not mid-typing')}
         ${row('-- and ...', 'Become an em dash — and a true ellipsis …')}
         ${row(K('⌘B · ⌘I', 'Ctrl+B · Ctrl+I'), 'Bold, italic. Quotes curl themselves.')}
-=======
-        ${row("Enter ×2", "Section break (***)")}
-        ${row("Enter ×3", "New chapter, auto-numbered")}
-        ${row(KPH, "Placeholder note")}
-        ${row(KDA, "Send the selected passage to Darlings")}
-        ${row(KZ, "Undo big moves (chapter deletes, replace-all, darlings) when not mid-typing")}
-        ${row("-- and ...", "Become an em dash — and a true ellipsis …")}
-        ${row(K("⌘B · ⌘I", "Ctrl+B · Ctrl+I"), "Bold, italic. Quotes curl themselves.")}
->>>>>>> Stashed changes
       </div>
 
       <div class="help-sec">Getting around</div>
@@ -6150,7 +6140,6 @@ function parasFromHtml(html) {
     );
     if (brk) brk.remove();
   });
-<<<<<<< Updated upstream
   holder.querySelectorAll('.darling-anchor, .ph-mark, .ghost').forEach((n) => n.remove());
   return [...holder.querySelectorAll('p')].map((p) => {
     const sceneBreak = p.classList.contains('scene-break');
@@ -6172,33 +6161,6 @@ function parasFromHtml(html) {
       html: `<p${poetry ? ' class="poetry"' : ''}${align ? ` style="text-align:${align}"` : ''}>${inner}</p>`
     };
   }).filter((p) => p.sceneBreak || p.text);
-=======
-  holder
-    .querySelectorAll(".darling-anchor, .ph-mark, .ghost")
-    .forEach((n) => n.remove());
-  return [...holder.querySelectorAll("p")]
-    .map((p) => {
-      const sceneBreak = p.classList.contains("scene-break");
-      const align = (p.style && p.style.textAlign) || "";
-      const runs = paraRuns(p.innerHTML).filter((r) => r.text);
-      const inner = runs
-        .map((r) => {
-          let t = escHtml(r.text);
-          if (r.i) t = "<i>" + t + "</i>";
-          if (r.b) t = "<b>" + t + "</b>";
-          return t;
-        })
-        .join("");
-      return {
-        sceneBreak,
-        text: p.innerText.replace(/\u00a0/g, " ").trim(),
-        runs,
-        align,
-        html: `<p${align ? ` style="text-align:${align}"` : ""}>${inner}</p>`,
-      };
-    })
-    .filter((p) => p.sceneBreak || p.text);
->>>>>>> Stashed changes
 }
 
 function exportChapters() {
@@ -6239,14 +6201,8 @@ function buildTxt(data) {
   out += `by ${d.author}\n\n\n`;
   for (const ch of d.sections) {
     if (ch.heading) out += `${ch.heading.toUpperCase()}\n\n`;
-<<<<<<< Updated upstream
     for (const p of ch.paras) out += p.sceneBreak ? '\n***\n\n' : (p.poetry ? '    ' : '') + p.text + '\n\n';
     out += '\n';
-=======
-    for (const p of ch.paras)
-      out += p.sceneBreak ? "\n***\n\n" : p.text + "\n\n";
-    out += "\n";
->>>>>>> Stashed changes
   }
   return out;
 }
@@ -6269,11 +6225,7 @@ function buildMd(data) {
   for (const ch of d.sections) {
     if (ch.heading) out += `\n## ${ch.heading}\n\n`;
     for (const p of ch.paras) {
-<<<<<<< Updated upstream
       out += p.sceneBreak ? '\n***\n\n' : (p.poetry ? '> ' : '') + p.runs.map(mdRun).join('') + '\n\n';
-=======
-      out += p.sceneBreak ? "\n***\n\n" : p.runs.map(mdRun).join("") + "\n\n";
->>>>>>> Stashed changes
     }
   }
   return out;
@@ -6286,7 +6238,6 @@ function buildHtml(data, opts = {}) {
     0,
   );
   const stamp = new Date().toLocaleString();
-<<<<<<< Updated upstream
   const chaptersHtml = d.sections.map((ch) => {
     // only the chapter's opening paragraph gets the enlarged initial —
     // scene breaks resume ordinary body text
@@ -6307,30 +6258,6 @@ function buildHtml(data, opts = {}) {
       return html;
     }).join('\n');
     return `
-=======
-  const chaptersHtml = d.sections
-    .map((ch) => {
-      // only the chapter's opening paragraph gets the enlarged initial —
-      // scene breaks resume ordinary body text
-      let first = true;
-      const paras = ch.paras
-        .map((p) => {
-          if (p.sceneBreak) return '<p class="brk">***</p>';
-          let html = p.html;
-          if (first) {
-            const h = document.createElement("div");
-            h.innerHTML = html;
-            if (h.firstElementChild) {
-              h.firstElementChild.classList.add("first");
-              html = h.innerHTML;
-            }
-          }
-          first = false;
-          return html;
-        })
-        .join("\n");
-      return `
->>>>>>> Stashed changes
     <section class="chapter">
       ${ch.heading ? `<h2>${ch.heading}</h2>` : ""}
       ${paras}
@@ -6414,7 +6341,6 @@ function docxP(runs, opts = {}) {
   if (opts.pageBreak) pPr.push("<w:pageBreakBefore/>");
   if (opts.align) pPr.push(`<w:jc w:val="${opts.align}"/>`);
   if (opts.indent) pPr.push('<w:ind w:firstLine="480"/>');
-<<<<<<< Updated upstream
   if (opts.poetry) pPr.push('<w:ind w:left="720" w:right="720"/>');
   if (opts.spaceBefore) pPr.push(`<w:spacing w:before="${opts.spaceBefore}" w:line="360" w:lineRule="auto"/>`);
   const rXml = runs.map((r) => {
@@ -6422,22 +6348,6 @@ function docxP(runs, opts = {}) {
     return `<w:r>${rPr ? '<w:rPr>' + rPr + '</w:rPr>' : ''}<w:t xml:space="preserve">${escXml(r.text)}</w:t></w:r>`;
   }).join('');
   return `<w:p><w:pPr>${pPr.join('')}</w:pPr>${rXml}</w:p>`;
-=======
-  if (opts.spaceBefore)
-    pPr.push(
-      `<w:spacing w:before="${opts.spaceBefore}" w:line="360" w:lineRule="auto"/>`,
-    );
-  const rXml = runs
-    .map((r) => {
-      const rPr =
-        (r.b ? "<w:b/>" : "") +
-        (r.i ? "<w:i/>" : "") +
-        (opts.size ? `<w:sz w:val="${opts.size}"/>` : "");
-      return `<w:r>${rPr ? "<w:rPr>" + rPr + "</w:rPr>" : ""}<w:t xml:space="preserve">${escXml(r.text)}</w:t></w:r>`;
-    })
-    .join("");
-  return `<w:p><w:pPr>${pPr.join("")}</w:pPr>${rXml}</w:p>`;
->>>>>>> Stashed changes
 }
 
 function buildDocxEntries(data) {
@@ -6471,18 +6381,9 @@ function buildDocxEntries(data) {
       body.push(docxP([], { pageBreak: true })); // headingless story still starts fresh
     }
     for (const p of ch.paras) {
-<<<<<<< Updated upstream
       if (p.sceneBreak) body.push(docxP([{ text: '***' }], { align: 'center', spaceBefore: 240 }));
       else if (p.poetry) body.push(docxP(paraRuns(p.html), { align: p.align === 'center' || p.align === 'right' ? p.align : '', poetry: true }));
       else if (p.align === 'center' || p.align === 'right') body.push(docxP(paraRuns(p.html), { align: p.align }));
-=======
-      if (p.sceneBreak)
-        body.push(
-          docxP([{ text: "***" }], { align: "center", spaceBefore: 240 }),
-        );
-      else if (p.align === "center" || p.align === "right")
-        body.push(docxP(paraRuns(p.html), { align: p.align }));
->>>>>>> Stashed changes
       else body.push(docxP(paraRuns(p.html), { indent: true }));
     }
   });
@@ -6542,7 +6443,6 @@ async function exportCover(d) {
 
 function chapterXhtml(ch, d) {
   let first = true;
-<<<<<<< Updated upstream
   const paras = ch.paras.map((p) => {
     if (p.sceneBreak) { first = true; return '<p class="brk">* * *</p>'; }
     const classes = [];
@@ -6559,30 +6459,6 @@ function chapterXhtml(ch, d) {
     }).join('');
     return `<p${cls}>${inner}</p>`;
   }).join('\n');
-=======
-  const paras = ch.paras
-    .map((p) => {
-      if (p.sceneBreak) {
-        first = true;
-        return '<p class="brk">* * *</p>';
-      }
-      const classes = [];
-      if (first) classes.push("first");
-      if (p.align === "center" || p.align === "right") classes.push(p.align);
-      const cls = classes.length ? ` class="${classes.join(" ")}"` : "";
-      first = false;
-      const inner = paraRuns(p.html)
-        .map((r) => {
-          let t = escXml(r.text);
-          if (r.i) t = "<em>" + t + "</em>";
-          if (r.b) t = "<strong>" + t + "</strong>";
-          return t;
-        })
-        .join("");
-      return `<p${cls}>${inner}</p>`;
-    })
-    .join("\n");
->>>>>>> Stashed changes
   return `<?xml version="1.0" encoding="utf-8"?>
 <!DOCTYPE html>
 <html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops">
@@ -7021,6 +6897,7 @@ async function showAbout() {
 window.neo.onMenu(async (msg) => {
   if (msg.type === "flush") {
     flushAllSaves();
+    finishPendingCheckpoint("quit");
     window.neo.flushComplete();
   }
   if (msg.type === "help") showHelp();
@@ -7035,18 +6912,14 @@ window.neo.onMenu(async (msg) => {
   if (msg.type === "import") importBooks();
   if (msg.type === "stats") openStats();
   if (msg.type === "syncSettings") openSyncSettings();
-  if (msg.type === "gitAutoPushError") toast("GitHub backup failed — open Sync Settings to retry");
+  if (msg.type === "gitAutoPushError") toast(`GitHub backup failed: ${msg.message || "open Sync Settings to retry"}`);
   if (msg.type === "plugins") openPlugins();
   if (msg.type === "coverArt") openCoverArt();
   if (msg.type === "align") {
     applyAlign(msg.value);
   }
-<<<<<<< Updated upstream
   if (msg.type === 'poetry') togglePoetry();
   if (msg.type === 'uiBright') {
-=======
-  if (msg.type === "uiBright") {
->>>>>>> Stashed changes
     library.uiBright = !library.uiBright;
     await window.neo.writeLibrary(library);
     applyFonts();

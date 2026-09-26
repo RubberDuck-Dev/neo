@@ -130,16 +130,41 @@ async function drainBookWrites() {
   await Promise.allSettled([...bookWriteQueues.values()]);
 }
 
-function runGit(args) {
+// Git runs without a terminal. Prompts are disabled so a missing credential
+// fails fast instead of waiting forever on a TTY, and every call has a
+// timeout so a dead network can never wedge the queue behind it.
+const GIT_TIMEOUT_MS = 30 * 1000;
+const GIT_PUSH_TIMEOUT_MS = 90 * 1000;
+function gitEnv() {
+  const extra = process.platform === 'win32' ? [] : ['/opt/homebrew/bin', '/usr/local/bin', '/usr/bin', '/bin'];
+  const parts = String(process.env.PATH || '').split(path.delimiter).filter(Boolean);
+  for (const dir of extra) if (!parts.includes(dir)) parts.push(dir);
+  return { ...process.env, PATH: parts.join(path.delimiter), GIT_TERMINAL_PROMPT: '0', GCM_INTERACTIVE: 'auto' };
+}
+
+function runGit(args, { timeout = GIT_TIMEOUT_MS } = {}) {
   return new Promise((resolve, reject) => {
-    execFile('git', args, { cwd: LIBRARY_DIR, windowsHide: true }, (error, stdout, stderr) => {
+    execFile('git', args, { cwd: LIBRARY_DIR, windowsHide: true, timeout, env: gitEnv() }, (error, stdout, stderr) => {
       if (error) {
         error.stdout = stdout;
         error.stderr = stderr;
+        if (error.killed) error.message = `git ${args[0]} timed out`;
         reject(error);
       } else resolve({ stdout: stdout.trim(), stderr: stderr.trim() });
     });
   });
+}
+
+function samePath(a, b) {
+  try {
+    const norm = (p) => {
+      const real = fs.realpathSync.native(path.resolve(p));
+      return process.platform === 'win32' || process.platform === 'darwin' ? real.toLowerCase() : real;
+    };
+    return norm(a) === norm(b);
+  } catch {
+    return false;
+  }
 }
 
 async function libraryGitStatus() {
@@ -149,8 +174,13 @@ async function libraryGitStatus() {
     return { available: false, initialized: false };
   }
   try {
-    const inside = await runGit(['rev-parse', '--is-inside-work-tree']);
-    if (inside.stdout !== 'true') return { available: true, initialized: false };
+    // Only a repository rooted at the library counts. A repo in a parent
+    // folder (dotfiles in ~, a Documents repo) must never receive NEO's
+    // commits or have its origin rewritten.
+    const top = await runGit(['rev-parse', '--show-toplevel']);
+    if (!top.stdout || !samePath(top.stdout, LIBRARY_DIR)) {
+      return { available: true, initialized: false, parentRepo: top.stdout || null };
+    }
     const [branch, remote, status] = await Promise.all([
       runGit(['branch', '--show-current']),
       runGit(['remote', 'get-url', 'origin']).catch(() => ({ stdout: '' })),
@@ -162,29 +192,82 @@ async function libraryGitStatus() {
   }
 }
 
+// Files that stay on this computer. library.json holds the email address,
+// email method, and GitHub address; a scrubbed copy is committed instead so
+// shelves and authors can still be restored from the backup.
+const GIT_IGNORE_LINES = [
+  '.neo-history/',
+  'Backups/',
+  'Exports/',
+  'neo-errors.log',
+  'library.json',
+  '*.tmp',
+  '.DS_Store'
+];
+const LIBRARY_BACKUP_FILE = 'library.backup.json';
+const PRIVATE_LIBRARY_KEYS = ['emailAddress', 'emailMethod'];
+
+function ensureGitIgnore() {
+  const file = path.join(LIBRARY_DIR, '.gitignore');
+  let current = '';
+  try { current = fs.readFileSync(file, 'utf8'); } catch { /* new file */ }
+  const have = new Set(current.split(/\r?\n/).map((line) => line.trim()));
+  const missing = GIT_IGNORE_LINES.filter((line) => !have.has(line));
+  if (!missing.length) return;
+  const header = current ? '' : '# NEO keeps these on this computer only. Git commits are the portable history.\n';
+  const base = current && !current.endsWith('\n') ? current + '\n' : current;
+  atomicWrite(file, header + base + missing.join('\n') + '\n');
+}
+
+function writeLibraryBackup() {
+  const lib = readJSON(LIBRARY_FILE, null);
+  if (!lib) return;
+  const copy = JSON.parse(JSON.stringify(lib));
+  for (const key of PRIVATE_LIBRARY_KEYS) delete copy[key];
+  if (copy.history && copy.history.git) delete copy.history.git.remoteUrl;
+  const next = JSON.stringify(copy, null, 2);
+  const file = path.join(LIBRARY_DIR, LIBRARY_BACKUP_FILE);
+  let prev = null;
+  try { prev = fs.readFileSync(file, 'utf8'); } catch { /* first write */ }
+  if (prev !== next) atomicWrite(file, next);
+}
+
+// Commits need an identity. When the library repo has none (and no global
+// one is set), fall back to a neutral identity instead of failing silently.
+async function ensureGitIdentity() {
+  const has = async (key) => runGit(['config', key]).then((r) => !!r.stdout, () => false);
+  if (!(await has('user.name'))) await runGit(['config', 'user.name', 'NEO Writer']);
+  if (!(await has('user.email'))) await runGit(['config', 'user.email', 'writer@neo.local']);
+}
+
+async function stageLibrary() {
+  await ensureGitIdentity();
+  ensureGitIgnore();
+  writeLibraryBackup();
+  // Libraries connected before library.json was ignored still track it.
+  await runGit(['rm', '--cached', '--quiet', '--ignore-unmatch', 'library.json']);
+  await runGit(['add', '--all']);
+}
+
+async function commitStaged(message) {
+  try {
+    await runGit(['diff', '--cached', '--quiet']);
+    return false;
+  } catch (err) {
+    if (err.code !== 1) throw err;
+  }
+  await runGit(['commit', '--quiet', '-m', message]);
+  return true;
+}
+
 async function initializeLibraryGit(authorName = 'NEO Writer', authorEmail = 'writer@neo.local') {
   const status = await libraryGitStatus();
   if (!status.available) throw new Error('Git is not installed');
   if (!status.initialized) await runGit(['init', '-b', 'main']);
-  const ignore = [
-    '# NEO keeps these locally; Git commits are the portable history.',
-    '.neo-history/',
-    'Backups/',
-    'Exports/',
-    'neo-errors.log',
-    '.DS_Store',
-    ''
-  ].join('\n');
-  atomicWrite(path.join(LIBRARY_DIR, '.gitignore'), ignore);
   if (authorName) await runGit(['config', 'user.name', authorName]);
   if (authorEmail) await runGit(['config', 'user.email', authorEmail]);
-  await runGit(['add', '--all']);
-  try {
-    await runGit(['diff', '--cached', '--quiet']);
-  } catch (err) {
-    if (err.code !== 1) throw err;
-    await runGit(['commit', '-m', 'NEO library baseline']);
-  }
+  await stageLibrary();
+  await commitStaged('NEO library baseline');
   return libraryGitStatus();
 }
 
@@ -199,52 +282,124 @@ async function connectLibraryGitRemote(remoteUrl) {
   if (!/^(https:\/\/github\.com\/|git@github\.com:)[\w.-]+\/[\w.-]+(?:\.git)?\/?$/i.test(String(remoteUrl || ''))) {
     throw new Error('Enter a GitHub repository URL');
   }
-  const status = await libraryGitStatus();
-  if (!status.initialized) await initializeLibraryGit();
-  await ensureLibraryGitMainBranch();
-  if (status.remote) await runGit(['remote', 'set-url', 'origin', remoteUrl]);
-  else await runGit(['remote', 'add', 'origin', remoteUrl]);
-  return libraryGitStatus();
+  return queueGit(async () => {
+    let status = await libraryGitStatus();
+    if (!status.initialized) status = await initializeLibraryGit();
+    status = await ensureLibraryGitMainBranch();
+    if (status.remote) await runGit(['remote', 'set-url', 'origin', remoteUrl]);
+    else await runGit(['remote', 'add', 'origin', remoteUrl]);
+    return libraryGitStatus();
+  });
 }
 
-async function pushLibraryGit() {
+function explainPushError(err) {
+  const text = String((err && (err.stderr || err.message)) || '');
+  if (/non-fast-forward|fetch first|rejected/i.test(text)) {
+    return 'GitHub has commits this library doesn’t (a README, or another computer backing up here). Use a new, completely empty repository for each computer.';
+  }
+  if (/could not read Username|terminal prompts disabled|Authentication failed|Permission denied|403/i.test(text)) {
+    return 'GitHub needs you to sign in. Set up Git credentials (GitHub Desktop or `gh auth login`), then try again.';
+  }
+  if (/timed out|Could not resolve host|unable to access/i.test(text)) {
+    return 'Could not reach GitHub. NEO will try again after your next version.';
+  }
+  return text.split('\n').filter(Boolean).pop() || 'GitHub push failed';
+}
+
+async function pushNow() {
   const status = await ensureLibraryGitMainBranch();
   if (!status.remote) throw new Error('Connect a GitHub repository first');
-  await runGit(['push', '--set-upstream', 'origin', 'HEAD']);
+  try {
+    await runGit(['push', '--set-upstream', 'origin', 'HEAD'], { timeout: GIT_PUSH_TIMEOUT_MS });
+  } catch (err) {
+    logError('git-push', err);
+    throw new Error(explainPushError(err));
+  }
   return libraryGitStatus();
 }
 
+// "Back up now": commit whatever is on disk, then push it.
+async function pushLibraryGit() {
+  await drainBookWrites();
+  return queueGit(async () => {
+    const status = await ensureLibraryGitMainBranch();
+    if (!status.initialized) throw new Error('Connect a GitHub repository first');
+    await stageLibrary();
+    await commitStaged('NEO backup');
+    return pushNow();
+  });
+}
+
+// One git operation at a time. Nothing on the book write queue ever waits for
+// this queue, so a slow network can't hold up saving.
 let libraryGitQueue = Promise.resolve();
-function queueGitCommit(reason) {
-  const work = async () => {
-    const prefs = readJSON(LIBRARY_FILE, {}).history?.git || {};
+function queueGit(work) {
+  const next = libraryGitQueue.catch(() => {}).then(work);
+  libraryGitQueue = next.catch((err) => logError('git-history', err));
+  return next;
+}
+
+function gitPrefs() {
+  return readJSON(LIBRARY_FILE, {}).history?.git || {};
+}
+
+// Pushes are batched: a burst of versions becomes one upload.
+const PUSH_DELAY_MS = 60 * 1000;
+let pushTimer = null;
+let pushPending = false;
+function schedulePush(delay = PUSH_DELAY_MS) {
+  pushPending = true;
+  clearTimeout(pushTimer);
+  pushTimer = setTimeout(() => { pushTimer = null; runPendingPush(); }, delay);
+}
+
+function runPendingPush({ quiet = false } = {}) {
+  clearTimeout(pushTimer);
+  pushTimer = null;
+  if (!pushPending) return Promise.resolve(null);
+  pushPending = false;
+  return queueGit(async () => {
+    const prefs = gitPrefs();
+    if (!prefs.enabled || prefs.autoPush === false) return null;
+    const status = await libraryGitStatus();
+    if (!status.initialized || !status.remote) return null;
+    try {
+      return await pushNow();
+    } catch (err) {
+      if (!quiet) sendToWindow({ type: 'gitAutoPushError', message: err.message });
+      return null;
+    }
+  });
+}
+
+function queueGitCommit(reason, after = Promise.resolve()) {
+  return queueGit(async () => {
+    await Promise.resolve(after).catch(() => {});
+    const prefs = gitPrefs();
     if (!prefs.enabled) return null;
     const status = await ensureLibraryGitMainBranch();
     if (!status.initialized) return null;
-    await runGit(['add', '--all']);
-    try {
-      await runGit(['diff', '--cached', '--quiet']);
-      return null;
-    } catch (err) {
-      if (err.code !== 1) throw err;
-    }
-    await runGit(['commit', '-m', `NEO checkpoint: ${reason}`]);
-    // Older NEO settings only had `git.enabled`; treat those as automatic
-    // backups too so an existing connection does not silently stop at local
-    // commits after the auto-push option was introduced.
-    if (prefs.autoPush !== false && status.remote) {
-      try {
-        await runGit(['push', '--set-upstream', 'origin', 'HEAD']);
-      } catch (err) {
-        logError('git-auto-push', err);
-        sendToWindow({ type: 'gitAutoPushError', message: err.stderr || err.message || 'GitHub push failed' });
-      }
-    }
-    return true;
-  };
-  libraryGitQueue = libraryGitQueue.catch(() => {}).then(work);
-  libraryGitQueue.catch((err) => logError('git-history', err));
-  return libraryGitQueue;
+    await stageLibrary();
+    const committed = await commitStaged(`NEO checkpoint: ${reason}`);
+    // Older settings only had `git.enabled`; treat those as automatic backups.
+    if (committed && prefs.autoPush !== false && status.remote) schedulePush();
+    return committed;
+  });
+}
+
+// At launch, upload anything a previous session committed but never pushed.
+function pushLeftovers() {
+  const prefs = gitPrefs();
+  if (!prefs.enabled || prefs.autoPush === false) return;
+  pushPending = true;
+  runPendingPush({ quiet: true });
+}
+
+// On quit: let the final commit land and try one push, but never hold the
+// window hostage for more than a few seconds.
+function settleGit(limitMs = 8000) {
+  const done = libraryGitQueue.then(() => runPendingPush({ quiet: true })).catch(() => {});
+  return Promise.race([done, new Promise((resolve) => setTimeout(resolve, limitMs))]);
 }
 
 const HISTORY_DIR = '.neo-history';
@@ -273,6 +428,7 @@ async function copyCheckpointTree(source, destination, relative = '', files = []
 
 async function pruneCheckpoints(dir) {
   const now = Date.now();
+  const seenQuarters = new Set();
   const seenHours = new Set();
   const seenDays = new Set();
   const retentionDays = Math.max(1, Number(readJSON(LIBRARY_FILE, {}).history?.retentionDays) || 90);
@@ -284,14 +440,17 @@ async function pruneCheckpoints(dir) {
       return { full, created: Date.parse(manifest && manifest.createdAt) || fs.statSync(full).mtimeMs };
     })
     .sort((a, b) => b.created - a.created);
-  for (const snapshot of snapshots) {
+  for (const [index, snapshot] of snapshots.entries()) {
     const age = now - snapshot.created;
     const stamp = new Date(snapshot.created);
+    const quarter = Math.floor(snapshot.created / (15 * 60 * 1000));
     const hour = stamp.toISOString().slice(0, 13);
     const day = stamp.toISOString().slice(0, 10);
-    const keep = age <= 24 * 60 * 60 * 1000 ||
+    const keep = index < 20 ||
+      (age <= 24 * 60 * 60 * 1000 && !seenQuarters.has(quarter)) ||
       (age <= 30 * 24 * 60 * 60 * 1000 && !seenHours.has(hour)) ||
       (age <= retentionDays * 24 * 60 * 60 * 1000 && !seenDays.has(day));
+    seenQuarters.add(quarter);
     seenHours.add(hour);
     seenDays.add(day);
     if (!keep) await fs.promises.rm(snapshot.full, { recursive: true, force: true });
@@ -492,11 +651,11 @@ ipcMain.handle('json:write', async (_e, bookId, name, data) => {
 });
 
 ipcMain.handle('history:checkpoint', async (_e, bookId, reason) => {
-  return queueBookWrite(bookId, async () => {
-    const checkpoint = await createCheckpoint(bookId, reason);
-    await queueGitCommit(reason);
-    return checkpoint;
-  });
+  const localVersions = readJSON(LIBRARY_FILE, {}).history?.enabled !== false;
+  const checkpoint = queueBookWrite(bookId, () => (localVersions ? createCheckpoint(bookId, reason) : null));
+  // Git waits for this book's writes to land, but saving never waits for Git.
+  queueGitCommit(reason, checkpoint);
+  return checkpoint;
 });
 
 ipcMain.handle('history:list', async (_e, bookId) => {
@@ -504,18 +663,16 @@ ipcMain.handle('history:list', async (_e, bookId) => {
 });
 
 ipcMain.handle('history:restore', async (_e, bookId, checkpointId) => {
-  return queueBookWrite(bookId, async () => {
-    const restored = await restoreCheckpoint(bookId, checkpointId);
-    await queueGitCommit('restore');
-    return restored;
-  });
+  const restored = queueBookWrite(bookId, () => restoreCheckpoint(bookId, checkpointId));
+  queueGitCommit('restore', restored);
+  return restored;
 });
 
 ipcMain.handle('git:status', () => libraryGitStatus());
-ipcMain.handle('git:initialize', async (_e, authorName, authorEmail) => {
+ipcMain.handle('git:initialize', (_e, authorName, authorEmail) => queueGit(async () => {
   await initializeLibraryGit(authorName, authorEmail);
   return ensureLibraryGitMainBranch();
-});
+}));
 ipcMain.handle('git:connectRemote', (_e, remoteUrl) => connectLibraryGitRemote(remoteUrl));
 ipcMain.handle('git:push', () => pushLibraryGit());
 
@@ -986,7 +1143,7 @@ async function dailyBackup() {
 
     const JSZip = require('jszip');
     const zip = new JSZip();
-    const skip = new Set(['Backups', 'Exports', HISTORY_DIR]);
+    const skip = new Set(['Backups', 'Exports', HISTORY_DIR, '.git']);
     const walk = (dir, rel) => {
       for (const name of fs.readdirSync(dir)) {
         if (skip.has(name)) continue;
@@ -1054,7 +1211,7 @@ function createWindow() {
     });
     win.webContents.send('menu', { type: 'flush' });
     flushed.then(() => {
-      drainBookWrites().catch((err) => logError('shutdown-save', err)).finally(() => {
+      drainBookWrites().catch((err) => logError('shutdown-save', err)).then(() => settleGit()).finally(() => {
         allowClose = true;
         win.close();
       });
@@ -1424,6 +1581,7 @@ app.whenReady().then(() => {
     try { buildMenu(); } catch (err) { logError('menu', err); }
     try { dailyBackup(); } catch (err) { logError('backup', err); }
     setInterval(() => { dailyBackup(); }, 60 * 60 * 1000);
+    setTimeout(() => { try { pushLeftovers(); } catch (err) { logError('git-startup', err); } }, 15 * 1000);
     try { checkForUpdates(); } catch (err) { logError('updater', err); }
   } catch (err) {
     // catastrophic: tell the human instead of dying in silence
