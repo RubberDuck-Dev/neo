@@ -22,6 +22,47 @@ app.commandLine.appendSwitch('blink-settings', 'smartInsertDeleteEnabled=false')
 let LIBRARY_DIR = path.join(os.homedir(), 'Documents', 'NEO Library');
 let LIBRARY_FILE = path.join(LIBRARY_DIR, 'library.json');
 
+// Where the library lives can be chosen (File → Library Location…). The
+// choice is an app preference in userData, never inside the library itself.
+function setLibraryPath(dir) {
+  LIBRARY_DIR = path.resolve(dir);
+  LIBRARY_FILE = path.join(LIBRARY_DIR, 'library.json');
+}
+
+function preferencesFile() {
+  return path.join(app.getPath('userData'), 'preferences.json');
+}
+
+function readPreferences() {
+  return readJSON(preferencesFile(), {});
+}
+
+function writePreferences(prefs) {
+  fs.mkdirSync(path.dirname(preferencesFile()), { recursive: true });
+  writeJSON(preferencesFile(), prefs);
+}
+
+function validLibrary(dir) {
+  if (!dir || !fs.existsSync(path.join(dir, 'library.json'))) return false;
+  const data = readJSON(path.join(dir, 'library.json'), null);
+  return !!data && typeof data === 'object' && Array.isArray(data.shelves);
+}
+
+// Returns the configured path when it can't be used this session (a sync
+// folder or external drive that isn't mounted), so the writer can be told.
+// A fresh library is never created at a configured path that has vanished.
+function resolveLibraryAtStartup() {
+  const defaultDir = path.join(app.getPath('documents'), 'NEO Library');
+  const prefs = readPreferences();
+  const configured = typeof prefs.libraryPath === 'string' && prefs.libraryPath.trim()
+    ? path.resolve(prefs.libraryPath)
+    : null;
+  if (!configured) { setLibraryPath(defaultDir); return null; }
+  if (validLibrary(configured)) { setLibraryPath(configured); return null; }
+  setLibraryPath(defaultDir);
+  return configured;
+}
+
 function ensureLibrary() {
   if (!fs.existsSync(LIBRARY_DIR)) fs.mkdirSync(LIBRARY_DIR, { recursive: true });
   if (!fs.existsSync(LIBRARY_FILE)) {
@@ -1186,6 +1227,26 @@ process.on('unhandledRejection', (err) => logError('main-promise', err));
 ipcMain.handle('log:error', (_e, msg) => logError('renderer', msg));
 
 // One zip of the whole library per day, keeping the last 14. Cheap insurance.
+async function zipLibrary(target) {
+  const JSZip = require('jszip');
+  const zip = new JSZip();
+  const skip = new Set(['Backups', 'Exports', HISTORY_DIR, '.git']);
+  const walk = (dir, rel) => {
+    for (const name of fs.readdirSync(dir)) {
+      if (skip.has(name)) continue;
+      const full = path.join(dir, name);
+      const relPath = rel ? rel + '/' + name : name;
+      const stat = fs.statSync(full);
+      if (stat.isDirectory()) walk(full, relPath);
+      else zip.file(relPath, fs.readFileSync(full));
+    }
+  };
+  walk(LIBRARY_DIR, '');
+  const archive = await zip.generateAsync({ type: 'nodebuffer', compression: 'DEFLATE' });
+  await JSZip.loadAsync(archive); // validate before replacing or pruning backups
+  atomicWrite(target, archive);
+}
+
 async function dailyBackup() {
   try {
     ensureLibrary();
@@ -1197,24 +1258,7 @@ async function dailyBackup() {
     const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
     const target = path.join(backupsDir, `neo-backup-${today}.zip`);
     if (fs.existsSync(target)) return;
-
-    const JSZip = require('jszip');
-    const zip = new JSZip();
-    const skip = new Set(['Backups', 'Exports', HISTORY_DIR, '.git']);
-    const walk = (dir, rel) => {
-      for (const name of fs.readdirSync(dir)) {
-        if (skip.has(name)) continue;
-        const full = path.join(dir, name);
-        const relPath = rel ? rel + '/' + name : name;
-        const stat = fs.statSync(full);
-        if (stat.isDirectory()) walk(full, relPath);
-        else zip.file(relPath, fs.readFileSync(full));
-      }
-    };
-    walk(LIBRARY_DIR, '');
-    const archive = await zip.generateAsync({ type: 'nodebuffer', compression: 'DEFLATE' });
-    await JSZip.loadAsync(archive); // validate before replacing or pruning backups
-    atomicWrite(target, archive);
+    await zipLibrary(target);
 
     // prune old backups
     const backups = fs.readdirSync(backupsDir).filter((f) => f.startsWith('neo-backup-')).sort();
@@ -1222,6 +1266,127 @@ async function dailyBackup() {
   } catch (err) {
     logError('backup', err);
   }
+}
+
+// ---------------------------------------------------------------------------
+// Library location (adapted from hughhowey/neo#16 by swirlingstagnancy)
+// ---------------------------------------------------------------------------
+
+// Ask the window to write out anything still in memory, then wait for the
+// book queues and Git to settle, so a move or switch sees a quiet library.
+async function quietLibrary() {
+  sendToWindow({ type: 'flush' });
+  await new Promise((resolve) => setTimeout(resolve, 1000));
+  await drainBookWrites();
+  await settleGit(15000);
+}
+
+function libraryTargetForSelection(selected) {
+  const picked = path.resolve(selected);
+  if (fs.existsSync(path.join(picked, 'library.json'))) return picked;
+  if (path.basename(picked).toLowerCase() === 'neo library') return picked;
+  return path.join(picked, 'NEO Library');
+}
+
+async function switchLibraryTo(target) {
+  const prefs = readPreferences();
+  prefs.libraryPath = target;
+  writePreferences(prefs);
+  setLibraryPath(target);
+  for (const w of BrowserWindow.getAllWindows()) w.reload();
+}
+
+async function changeLibraryLocation() {
+  const win = BrowserWindow.getFocusedWindow() || BrowserWindow.getAllWindows()[0];
+  const { canceled, filePaths } = await dialog.showOpenDialog(win, {
+    title: 'Choose where NEO keeps your library',
+    defaultPath: path.dirname(LIBRARY_DIR),
+    properties: ['openDirectory', 'createDirectory']
+  });
+  if (canceled || !filePaths.length) return;
+
+  const oldLibrary = path.resolve(LIBRARY_DIR);
+  const target = path.resolve(libraryTargetForSelection(filePaths[0]));
+  if (samePath(target, oldLibrary) || target === oldLibrary) {
+    await dialog.showMessageBox(win, { type: 'info', message: 'NEO is already using this library.', detail: oldLibrary });
+    return;
+  }
+  if (target.startsWith(oldLibrary + path.sep)) {
+    await dialog.showMessageBox(win, {
+      type: 'error',
+      message: 'Choose a place outside your current NEO Library.',
+      detail: 'A library inside another library would make backups and moving unsafe.'
+    });
+    return;
+  }
+
+  await quietLibrary();
+  try {
+    const backupsDir = path.join(LIBRARY_DIR, 'Backups');
+    fs.mkdirSync(backupsDir, { recursive: true });
+    await zipLibrary(path.join(backupsDir, `neo-safety-${new Date().toISOString().replace(/[:.]/g, '-')}.zip`));
+  } catch (err) {
+    logError('library-move-backup', err);
+    await dialog.showMessageBox(win, {
+      type: 'error',
+      message: 'NEO could not make a safety backup first.',
+      detail: 'Your library was not moved. Check neo-errors.log and try again.'
+    });
+    return;
+  }
+
+  const targetExists = fs.existsSync(target);
+  const targetHasLibrary = targetExists && fs.existsSync(path.join(target, 'library.json'));
+  if (targetHasLibrary) {
+    if (!validLibrary(target)) {
+      await dialog.showMessageBox(win, { type: 'error', message: 'That folder doesn’t hold a valid NEO library.', detail: target });
+      return;
+    }
+    const { response } = await dialog.showMessageBox(win, {
+      type: 'question',
+      buttons: ['Cancel', 'Use This Library'],
+      defaultId: 1,
+      cancelId: 0,
+      message: 'Use the NEO Library that’s already here?',
+      detail: `NEO will switch to:\n${target}\n\nYour current library stays untouched at:\n${oldLibrary}`
+    });
+    if (response !== 1) return;
+  } else {
+    if (targetExists && fs.readdirSync(target).length > 0) {
+      await dialog.showMessageBox(win, {
+        type: 'error',
+        message: 'There’s already a folder called NEO Library here, and it isn’t empty.',
+        detail: 'Choose another place, or a folder that already holds a NEO library.'
+      });
+      return;
+    }
+    try {
+      if (targetExists) fs.rmdirSync(target);
+      fs.mkdirSync(path.dirname(target), { recursive: true });
+      fs.cpSync(oldLibrary, target, { recursive: true, errorOnExist: true });
+      if (!validLibrary(target)) throw new Error('Copied library failed validation');
+    } catch (err) {
+      try {
+        if (fs.existsSync(target) && !validLibrary(target)) fs.rmSync(target, { recursive: true, force: true });
+      } catch { /* keep the original error */ }
+      logError('library-move', err);
+      await dialog.showMessageBox(win, {
+        type: 'error',
+        message: 'NEO couldn’t copy your library.',
+        detail: 'Your original library is untouched. Check neo-errors.log and try again.'
+      });
+      return;
+    }
+  }
+
+  await dialog.showMessageBox(win, {
+    type: 'info',
+    message: targetHasLibrary ? 'Library switched.' : 'Library copied and switched.',
+    detail: targetHasLibrary
+      ? `NEO now uses:\n${target}\n\nYour previous library is untouched at:\n${oldLibrary}`
+      : `NEO now uses:\n${target}\n\nThe original is still at:\n${oldLibrary}\n\nKeep it until you’re happy the new place works.`
+  });
+  await switchLibraryTo(target);
 }
 
 // ---------------------------------------------------------------------------
@@ -1379,6 +1544,7 @@ function buildMenu() {
           accelerator: 'CmdOrCtrl+,',
           click: () => sendToWindow({ type: 'stats' })
         },
+        { label: 'Library Location…', click: () => changeLibraryLocation() },
         { type: 'separator' },
         {
           label: 'Import Manuscripts…',
@@ -1608,10 +1774,11 @@ app.whenReady().then(() => {
   // individually guarded so no single failure can leave the app running
   // invisibly with no window.
   try {
-    // the real Documents folder (handles OneDrive-redirected Windows setups)
+    // the chosen library, or the real Documents folder (handles
+    // OneDrive-redirected Windows setups)
+    let unavailableLibrary = null;
     try {
-      LIBRARY_DIR = path.join(app.getPath('documents'), 'NEO Library');
-      LIBRARY_FILE = path.join(LIBRARY_DIR, 'library.json');
+      unavailableLibrary = resolveLibraryAtStartup();
     } catch (err) {
       logError('paths', err);
     }
@@ -1636,6 +1803,13 @@ app.whenReady().then(() => {
     createWindow();
     try { initSpell(); } catch (err) { logError('spell', err); }
     try { buildMenu(); } catch (err) { logError('menu', err); }
+    if (unavailableLibrary) {
+      dialog.showMessageBox({
+        type: 'warning',
+        message: 'Your NEO Library isn’t available right now.',
+        detail: `NEO opened the default Documents library for this session.\n\nYour library’s usual place:\n${unavailableLibrary}\n\nIf it’s on a sync folder or an external drive, reconnect it and restart NEO. Your setting hasn’t changed.`
+      }).catch((err) => logError('library-path-warning', err));
+    }
     try { dailyBackup(); } catch (err) { logError('backup', err); }
     setInterval(() => { dailyBackup(); }, 60 * 60 * 1000);
     setTimeout(() => { try { pushLeftovers(); } catch (err) { logError('git-startup', err); } }, 15 * 1000);

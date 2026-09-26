@@ -65,7 +65,7 @@ Optional local checkpoints preserve complete book states while you write. In Fil
 
 ## Your files
 
-Everything lives in `~/Documents/NEO Library` — one folder per book, chapters as readable HTML, metadata as JSON. Open them in your favorite text editor.
+Everything lives in `~/Documents/NEO Library` — one folder per book, chapters as readable HTML, metadata as JSON. Open them in your favorite text editor. To keep it somewhere else (a sync folder, an external drive), use File → Library Location…; NEO copies it there and leaves the original untouched.
 
 ## Building from source (for the eggheads):
 
