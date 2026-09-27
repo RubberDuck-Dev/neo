@@ -32,3 +32,8 @@
 
 /* generous tap targets */
 button, .b-refresh, #nav-add, #back-to-shelf { min-height: 40px; }
+/* Desktop-only: pinning panes, and the GitHub backup plugin (Pocket shares
+   the library through Syncthing instead) */
+#nav-pin { display: none !important; }
+.plugin-card:has([data-plugin="github"]), .plugin-card:has([data-github-settings]) { display: none !important; }
+

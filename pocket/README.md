@@ -28,7 +28,7 @@ First install only: sideload, then grant **All files access**
 (Settings → Apps → NEO Pocket).
 
 Local builds need Android Studio and: `cd pocket && npm install`, copy
-`../renderer/`, `../covers.js` and `../styles.css` into `www/`, `npx cap sync android`, then
+`../renderer/`, `../covers.js`, `../styles.css` and `../fonts/*.woff2` (into `www/fonts/`) into `www/`, `npx cap sync android`, then
 build from `android/`. Local builds are debug-signed and won't install over a
 robot build (or vice versa).
 
@@ -39,6 +39,13 @@ the shared library, pen-name switching, chapter list via the ☰ button or a
 swipe from the left edge, Notes & Comments via a swipe from the right edge.
 Android's bars stay hidden (swipe an edge to peek), the back gesture returns
 to the shelf, and the on-screen keyboard stays down — long-press ☰ to summon it.
+
+Also from desktop NEO: Search (every book, from the shelf), plugins (palettes,
+Story Map, Note cards, Sprints), and the keyboard shortcuts the desktop keeps in
+its menus — Ctrl+F find, Ctrl+; spellcheck, Ctrl+Shift+; revision pass,
+Ctrl+Shift+R read aloud, Ctrl+Shift+U focus mode, Ctrl+Shift+T typewriter,
+Ctrl+, progress & settings. Versions, GitHub backup, export and import stay on
+the desktop.
 
 Punch list, in rough order:
 - Verify pocket-v0.1.5 fixed: dead Shelf button + system bars overlapping

@@ -214,7 +214,62 @@
       } catch { console.error(msg); }
       showErrorDetail(msg);
     },
-    onMenu: () => { /* no menu bar in your pocket */ },
+    /* ---------- search every book (same results as desktop) ---------- */
+    searchLibrary: async (query) => {
+      const q = String(query || '').trim();
+      if (q.length < 2) return [];
+      const ql = q.toLowerCase();
+      const decode = (t) => t.replace(/&nbsp;/g, ' ').replace(/&lt;/g, '<').replace(/&gt;/g, '>')
+        .replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&amp;/g, '&');
+      const paragraphs = (html) => String(html || '').split(/<\/p>/i)
+        .map((c) => decode(c.replace(/<[^>]*>/g, ''))).filter((t) => t.trim());
+      const lib = await readJSONFile(p('library.json'), { shelves: [] });
+      const shelved = (lib.shelves || []).flatMap((s) => s.bookIds || []);
+      let ids = [];
+      try {
+        const ls = await FS().readdir({ path: ROOT, directory: DIR });
+        ids = (ls.files || []).map((f) => (f && f.name) || f).filter((n) => String(n).startsWith('book-'));
+      } catch { ids = shelved; }
+      ids.sort((a, b) => (shelved.indexOf(a) + 1 || 1e9) - (shelved.indexOf(b) + 1 || 1e9));
+      const results = [];
+      let total = 0;
+      for (const id of ids) {
+        const meta = await readJSONFile(p(id, 'book.json'), null);
+        if (!meta || !Array.isArray(meta.chapterOrder)) continue;
+        const hits = [];
+        let count = 0;
+        for (const [index, chId] of meta.chapterOrder.entries()) {
+          let html = '';
+          try { html = await readText(p(id, 'chapters', chId + '.html')); } catch { continue; }
+          let ordinal = 0;
+          for (const para of paragraphs(html)) {
+            const lower = para.toLowerCase();
+            let at = lower.indexOf(ql);
+            while (at !== -1) {
+              count++;
+              if (hits.length < 25 && total < 400) {
+                const start = Math.max(0, at - 60), end = Math.min(para.length, at + q.length + 60);
+                hits.push({ chapterId: chId, chapterIndex: index, chapterTitle: (meta.chapterTitles || {})[chId] || '', ordinal,
+                  before: (start > 0 ? '…' : '') + para.slice(start, at).trimStart(), match: para.slice(at, at + q.length),
+                  after: para.slice(at + q.length, end).trimEnd() + (end < para.length ? '…' : '') });
+                total++;
+              }
+              ordinal++;
+              at = lower.indexOf(ql, at + q.length);
+            }
+          }
+        }
+        if (count) results.push({ bookId: id, title: meta.title || 'Untitled', author: meta.author || '', count, hits });
+      }
+      return results;
+    },
+
+    /* ---------- versions and GitHub backup: desktop only ---------- */
+    // (no createCheckpoint: the editor checks for it and skips versions)
+    listCheckpoints: async () => [],
+    gitStatus: async () => ({ available: false, initialized: false }),
+
+    onMenu: (cb) => { window.pocketMenu = cb; /* no menu bar: pocket keys call this (index.html) */ },
     poetryState: () => { /* no Format menu to tick */ }
   };
 

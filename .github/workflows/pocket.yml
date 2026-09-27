@@ -23,6 +23,7 @@ on:
       - 'pocket/**'
       - 'renderer/**'
       - 'covers.js'
+      - 'fonts/**'
       - 'styles.css'
       - '.github/workflows/pocket.yml'
     tags:
@@ -66,6 +67,7 @@ jobs:
           npm install
           rm -rf www/renderer && cp -r ../renderer www/renderer
           cp ../covers.js www/covers.js
+          rm -rf www/fonts && mkdir -p www/fonts && cp ../fonts/*.woff2 www/fonts/  # the cover typefaces
           cp ../styles.css www/styles.css
           npx cap sync android
 

@@ -15,6 +15,8 @@
       <h1>NEO</h1>
       <div class="shelf-header-right">
         <span id="author-chip" title="Click to change your author name"></span>
+        <button id="library-search-btn" title="Search every book">&#8981; Search</button>
+        <button id="plugins-btn" title="Add tools for this author">✦ Plugins</button>
         <button id="import-btn" hidden>&#8681; Import</button>
         <button id="add-shelf-btn" title="Add a shelf">+ Shelf</button>
       </div>
@@ -73,6 +75,10 @@
     <!-- Left hover zone: chapter navigation -->
     <div id="nav-hotzone"></div>
     <nav id="nav-pane">
+      <div id="nav-head">
+        <span>Chapters</span>
+        <button id="nav-pin" title="Keep this pane open">&#9737;</button>
+      </div>
       <div id="nav-list"></div>
       <button id="nav-add" title="Add a chapter at the end">+ Chapter</button>
     </nav>
@@ -82,7 +88,7 @@
     <aside id="side-pane">
       <div id="side-head">
         <span>Notes &amp; Comments</span>
-        <button id="side-pin" title="Keep this pane open">&#9737;</button>
+        <div class="pane-actions"><button id="side-filter" title="Show resolved notes too">Pending</button><button id="side-pin" title="Keep this pane open">&#9737;</button></div>
       </div>
       <div id="sticky-list"></div>
     </aside>
@@ -103,6 +109,7 @@
         <div id="aux-editor" contenteditable="true" spellcheck="false"></div>
         <div id="outline-list" hidden></div>
         <div id="darlings-list" hidden></div>
+        <div id="cards-list" hidden></div>
       </div>
     </main>
 
@@ -114,9 +121,11 @@
         <div class="tab" data-tab="notes">Notes</div>
         <div class="tab" data-tab="outline">Outline</div>
         <div class="tab darlings" data-tab="darlings" title="Drag any selection here. It's saved, not gone.">Darlings</div>
+        <div class="tab plugin-tab" data-tab="cards" hidden>Cards</div>
       </div>
       <div id="counters">
-        <span id="goal-counter" title="Today's words — click for goals, sprints, and your progress chart"></span>
+        <span id="goal-counter" title="Today's words — click for goals and your progress chart"></span>
+        <span id="sprint-controls" hidden><button id="sprint-pause" title="Pause timer">&#10074;&#10074;</button><button id="sprint-stop" title="Stop timer">&#9209;</button></span>
         <span id="pos-counter"></span>
         <span id="word-counter" title="Click to cycle book / chapter word count"></span>
         <span id="zoom-control" hidden><button id="zoom-out">&#8722;</button><span id="zoom-level">100%</span><button id="zoom-in">+</button></span>
@@ -210,6 +219,20 @@
       else if (dx > 0 && side.classList.contains('open')) side.classList.remove('open');
       start = null;
     }, { passive: true });
+    // Pocket has no menu bar, so the desktop's menu shortcuts are wired here
+    // for the hardware keyboard it's written on.
+    document.addEventListener('keydown', (e) => {
+      if (!(e.ctrlKey || e.metaKey)) return;
+      const k = e.code;
+      const go = (msg) => { e.preventDefault(); window.pocketMenu && window.pocketMenu(msg); };
+      if (e.shiftKey && k === 'Semicolon') go({ type: 'revisionPass' });
+      else if (e.shiftKey && k === 'KeyR') go({ type: 'readAloud' });
+      else if (e.shiftKey && k === 'KeyU') go({ type: 'focusMode' });
+      else if (e.shiftKey && k === 'KeyT') go({ type: 'typewriter' });
+      else if (!e.shiftKey && k === 'Semicolon') go({ type: 'spellcheck' });
+      else if (!e.shiftKey && k === 'KeyF') go({ type: 'find' });
+      else if (!e.shiftKey && k === 'Comma') go({ type: 'stats' });
+    });
     document.getElementById('paper-scroll').addEventListener('touchstart', (e) => {
       if (e.touches[0].clientX < EDGE || e.touches[0].clientX > window.innerWidth - EDGE) return;
       nav.classList.remove('open');

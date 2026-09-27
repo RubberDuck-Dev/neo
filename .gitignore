@@ -18,5 +18,6 @@ GITHUB-SETUP.md
 pocket/node_modules/
 pocket/www/app.js
 pocket/www/renderer/
+pocket/www/fonts/
 pocket/www/covers.js
 pocket/www/styles.css
