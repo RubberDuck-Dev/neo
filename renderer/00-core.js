@@ -8,7 +8,6 @@ let book = null; // current book.json
 let chapterHTML = {}; // chapterId -> html (loaded at open)
 let stickies = []; // [{id, chapterId, text, resolved}]
 let darlings = []; // [{id, html, text, chapterId, chapterLabel, date}]
-let noteCards = []; // per-book cards supplied by the Note Cards plugin
 let currentTab = "manuscript";
 let currentChapterId = null; // chapter the caret/scroll is in
 let wordMode = "book"; // 'book' | 'chapter'
@@ -132,14 +131,7 @@ function toast(msg, ms = 4000) {
 // count one each (those scripts don't put spaces between words); everything
 // else counts by whitespace-separated runs, as before.
 // (CJK counting adapted from hughhowey/neo#27 by jqlong17.)
-const CJK_CHAR = /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}]/gu;
-const countWords = (text) => {
-  const s = String(text || "");
-  const cjk = s.match(CJK_CHAR);
-  if (!cjk) return (s.trim().match(/\S+/g) || []).length;
-  const rest = s.replace(CJK_CHAR, " ").replace(/[\s\p{P}\p{S}]+/gu, " ").trim();
-  return cjk.length + (rest ? rest.split(" ").length : 0);
-};
+const countWords = NeoText.countWords;
 
 function cleanChapterEl(id) {
   const el = document.querySelector(`.chapter[data-id="${id}"] .chapter-body`);
@@ -157,4 +149,8 @@ let wordCache = {};
 function chapterWords(chId) {
   if (wordCache[chId] == null) wordCache[chId] = countWords(chapterText(chId));
   return wordCache[chId];
+}
+
+function editorElFor(key) {
+  return key.startsWith("aux-") ? $("#aux-editor") : document.querySelector(`.chapter[data-id="${key}"] .chapter-body`);
 }

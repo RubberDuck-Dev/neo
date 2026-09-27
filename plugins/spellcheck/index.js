@@ -1,38 +1,32 @@
 "use strict";
-
-/* ================================================================== */
-/*  SPELLCHECK PASS + TYPEWRITER SCROLLING                             */
-/* ================================================================== */
-
-/* NEO's own spellcheck pass: a bundled dictionary (via the main process),
-   squiggles painted with the CSS Highlight API — the same machinery as
-   search — and a right-click menu for suggestions. Chapters scan lazily
-   as the caret reaches them. */
+NeoPlugins.define("spellcheck", { name: "Spellcheck", icon: "Aa", kind: "Language", description: "Check spelling on demand using bundled offline dictionaries.", scope: "library", defaultEnabled: true, requires: ["spellcheck"], libraryFields: ["spellLanguage", "customWords"] }, (ctx) => {
+const { $, toast } = ctx;
 let spellOn = false;
+let closeCurrentMenu = () => {};
 let spellScanned = new Set();
 let spellRanges = new Map(); // key → [Range]
+let epoch = 0;
+let languageRequest = 0;
+const scans = new Map();
+const saveTimers = {};
 const spellCache = new Map(); // word → correct?
 
 const spellNorm = (w) => w.replace(/’/g, "'").replace(/^'+|'+$/g, "");
 
-function spellElFor(key) {
-  return key.startsWith("aux-")
-    ? $("#aux-editor")
-    : document.querySelector(`.chapter[data-id="${key}"] .chapter-body`);
-}
+const spellElFor = ctx.editorElFor;
 
 async function spellScanEl(el, key) {
   if (!el || !spellOn) return;
+  const generation = epoch;
+  const scan = (scans.get(key) || 0) + 1;
+  scans.set(key, scan);
   spellScanned.add(key);
   const occurrences = [];
-  const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
+
   // letters of any alphabet, with their accents, so French and German
   // words reach the dictionary whole
   const re = /[\p{L}\p{M}'’]+/gu;
-  let n;
-  while ((n = walker.nextNode())) {
-    const p = n.parentElement;
-    if (p && p.closest(".scene-break, .ghost, .ph-mark")) continue;
+  for (const n of NeoText.proseNodes(el)) {
     let m;
     re.lastIndex = 0;
     while ((m = re.exec(n.data))) {
@@ -46,10 +40,12 @@ async function spellScanEl(el, key) {
     (w) => !spellCache.has(w),
   );
   if (unknown.length) {
-    const res = await window.neo.spellCheckWords(unknown);
+    const res = await ctx.spell.check(unknown);
+    if (generation !== epoch || scan !== scans.get(key)) return;
+    if (!res) { spellScanned.delete(key); return; }
     for (const w of unknown) spellCache.set(w, res[w] !== false);
   }
-  if (!spellOn) return; // toggled off while we were checking
+  if (!spellOn || generation !== epoch || scan !== scans.get(key)) return;
   const ranges = [];
   for (const o of occurrences) {
     if (spellCache.get(o.word) || !o.node.isConnected) continue;
@@ -80,9 +76,9 @@ function scanSpellingIn(el, key) {
 
 // scan wherever the writer currently is
 function scanSpellingHere() {
-  if (currentTab === "manuscript") {
-    const body = currentChapterId && spellElFor(currentChapterId);
-    if (body) scanSpellingIn(body, currentChapterId);
+  if (ctx.currentTab === "manuscript") {
+    const body = ctx.currentChapterId && spellElFor(ctx.currentChapterId);
+    if (body) scanSpellingIn(body, ctx.currentChapterId);
   } else {
     scanSpellingIn(
       $("#aux-editor"),
@@ -99,6 +95,7 @@ function scheduleSpellRescan(key, el) {
 }
 
 function toggleSpellcheck() {
+  epoch++;
   spellOn = !spellOn;
   if (spellOn) {
     spellScanned = new Set();
@@ -107,22 +104,21 @@ function toggleSpellcheck() {
   } else {
     CSS.highlights.delete("neo-spell");
     spellRanges = new Map();
-    document.querySelector(".spell-menu")?.remove();
+    closeCurrentMenu();
   }
   toast(spellOn ? "Spellcheck on" : "Spellcheck off");
 }
 
 // Edit → Spellcheck Language: swap the dictionary, remember the choice with
 // the library, and re-check whatever is on screen
-const SPELL_LANGUAGE_NAMES = {
-  'en-US': 'US English', 'en-GB': 'UK English', 'en-CA': 'Canadian English',
-  'en-AU': 'Australian English', fr: 'French', es: 'Spanish', de: 'German'
-};
+const SPELL_LANGUAGE_NAMES = Object.fromEntries(Object.entries(NeoLanguage.dictionaries).map(([code, data]) => [code, data.label]));
 async function changeSpellLanguage(code) {
-  const ok = await window.neo.setSpellLanguage(code);
+  const request = ++languageRequest;
+  epoch++;
+  const ok = await ctx.spell.language(code);
+  if (request !== languageRequest) return;
   if (!ok) { toast('That dictionary would not load'); return; }
-  library.spellLanguage = code;
-  await window.neo.writeLibrary(library);
+  await ctx.saveLibrarySettings({ spellLanguage: code });
   spellCache.clear();
   if (spellOn) {
     spellScanned = new Set();
@@ -134,7 +130,7 @@ async function changeSpellLanguage(code) {
 }
 
 // right-click a flagged word for suggestions
-document.addEventListener("contextmenu", async (e) => {
+ctx.listen(document, "contextmenu", async (e) => {
   if (!spellOn) return;
   const editor =
     e.target.closest && e.target.closest(".chapter-body, #aux-editor");
@@ -158,7 +154,9 @@ document.addEventListener("contextmenu", async (e) => {
       : chEl
         ? chEl.dataset.id
         : null;
-  const sugg = await window.neo.spellSuggest(word);
+  const generation = epoch;
+  const sugg = await ctx.spell.suggest(word);
+  if (!spellOn || generation !== epoch || !node.isConnected) return;
   showSpellMenu(e.clientX, e.clientY, word, sugg, {
     replace: (s) => {
       const sel = window.getSelection();
@@ -171,10 +169,11 @@ document.addEventListener("contextmenu", async (e) => {
       if (key) spellScanEl(spellElFor(key), key);
     },
     learn: async () => {
+      const library = ctx.librarySettings;
       library.customWords = library.customWords || [];
       if (!library.customWords.includes(word)) library.customWords.push(word);
-      await window.neo.writeLibrary(library);
-      await window.neo.spellLearn(word);
+      await ctx.saveLibrarySettings(library);
+      await ctx.spell.learn(word);
       spellCache.set(word, true);
       for (const k of [...spellScanned]) spellScanEl(spellElFor(k), k);
     },
@@ -182,15 +181,18 @@ document.addEventListener("contextmenu", async (e) => {
 });
 
 function showSpellMenu(x, y, word, suggestions, actions) {
-  document.querySelector(".spell-menu")?.remove();
+  closeCurrentMenu();
   const menu = document.createElement("div");
   menu.className = "spell-menu";
+  let stopOutside = () => {};
+  const removeMenu = () => { menu.remove(); stopOutside(); };
+  closeCurrentMenu = removeMenu;
   if (suggestions.length) {
     for (const s of suggestions) {
       const btn = document.createElement("button");
       btn.textContent = s;
       btn.onclick = () => {
-        menu.remove();
+        removeMenu();
         actions.replace(s);
       };
       menu.appendChild(btn);
@@ -207,18 +209,37 @@ function showSpellMenu(x, y, word, suggestions, actions) {
   const learn = document.createElement("button");
   learn.textContent = `Add “${word}” to dictionary`;
   learn.onclick = () => {
-    menu.remove();
+    removeMenu();
     actions.learn();
   };
   menu.appendChild(learn);
-  document.body.appendChild(menu);
+  document.body.appendChild(ctx.own(menu));
   const r = menu.getBoundingClientRect();
   menu.style.left = Math.min(x, window.innerWidth - r.width - 10) + "px";
   menu.style.top = Math.min(y + 4, window.innerHeight - r.height - 10) + "px";
   const close = (ev) => {
     if (menu.contains(ev.target)) return;
-    menu.remove();
-    document.removeEventListener("mousedown", close, true);
+    removeMenu();
+
   };
-  document.addEventListener("mousedown", close, true);
+  stopOutside = ctx.listen(document, "mousedown", close, true);
 }
+
+function reset() {
+  epoch++; scans.clear();
+  for (const timer of Object.values(saveTimers)) clearTimeout(timer);
+  spellScanned.clear(); spellRanges.clear(); spellCache.clear();
+  CSS.highlights.delete("neo-spell");
+  closeCurrentMenu();
+}
+return {
+  command(type, value) {
+    if (type === "spellcheck") toggleSpellcheck();
+    if (type === "spellLanguage") changeSpellLanguage(value);
+  },
+  changed(key, el) { if (spellOn) scheduleSpellRescan(key, el); },
+  selection() { if (spellOn) scanSpellingHere(); },
+  bookClosed() { reset(); spellOn = false; },
+  dispose() { languageRequest++; reset(); spellOn = false; ctx.spell.stop(); }
+};
+});

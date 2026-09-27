@@ -22,7 +22,7 @@ function versionsWanted() {
   return settings.enabled !== false || !!(settings.git && settings.git.enabled);
 }
 
-function checkpointNow(reason, bookId = book && book.id) {
+async function checkpointNow(reason, bookId = book && book.id) {
   if (!book || !bookId || book.id !== bookId || !versionsWanted()) return;
   if (typeof window.neo.createCheckpoint !== "function") return; // NEO Pocket has no version history
   clearTimeout(checkpointTimer);
@@ -30,10 +30,11 @@ function checkpointNow(reason, bookId = book && book.id) {
   // The main process queues these writes before the checkpoint request, so a
   // checkpoint always captures one coherent on-disk state.
   flushAllSaves();
-  window.neo.createCheckpoint(bookId, reason).catch((err) => {
+  await NeoPlugins.flush();
+  return window.neo.createCheckpoint(bookId, reason).catch((err) => {
     window.neo.logError(`checkpoint: ${err && err.stack ? err.stack : err}`);
   }).then((result) => {
-    if (result) lastCheckpointAt = new Date(result.createdAt);
+    if (result && book?.id === bookId) lastCheckpointAt = new Date(result.createdAt);
   });
 }
 
@@ -50,7 +51,7 @@ function scheduleCheckpoint(reason) {
 // instead of dropping it when the timer's book is gone.
 function finishPendingCheckpoint(reason) {
   if (!checkpointTimer) return;
-  checkpointNow(reason);
+  return checkpointNow(reason);
 }
 
 function scheduleChapterSave(chId) {
@@ -110,10 +111,11 @@ setInterval(() => {
 }, 20000);
 
 async function backToShelf() {
+  await NeoPlugins.closeBook();
   if (revisionOn) toggleRevisionPass(false);
   stopReadAloud(true);
   flushAllSaves();
-  finishPendingCheckpoint("closed book");
+  await finishPendingCheckpoint("closed book");
   tabPlaces = {};
   dirtyChapters = new Set();
   metaSavePending = false;
@@ -122,6 +124,7 @@ async function backToShelf() {
   undoStack = [];
   $("#editor-view").hidden = true;
   $("#bookshelf-view").hidden = false;
+  await NeoPlugins.reconcile();
   renderShelves();
 }
 $("#back-to-shelf").onclick = backToShelf;

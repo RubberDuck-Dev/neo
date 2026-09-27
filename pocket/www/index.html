@@ -6,6 +6,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>NEO Pocket</title>
   <link rel="stylesheet" href="styles.css" />
+  <link rel="stylesheet" href="renderer/plugin-host/library.css" />
   <link rel="stylesheet" href="pocket.css" />
 </head>
 <body>
@@ -109,7 +110,6 @@
         <div id="aux-editor" contenteditable="true" spellcheck="false"></div>
         <div id="outline-list" hidden></div>
         <div id="darlings-list" hidden></div>
-        <div id="cards-list" hidden></div>
       </div>
     </main>
 
@@ -121,11 +121,9 @@
         <div class="tab" data-tab="notes">Notes</div>
         <div class="tab" data-tab="outline">Outline</div>
         <div class="tab darlings" data-tab="darlings" title="Drag any selection here. It's saved, not gone.">Darlings</div>
-        <div class="tab plugin-tab" data-tab="cards" hidden>Cards</div>
       </div>
       <div id="counters">
         <span id="goal-counter" title="Today's words — click for goals and your progress chart"></span>
-        <span id="sprint-controls" hidden><button id="sprint-pause" title="Pause timer">&#10074;&#10074;</button><button id="sprint-stop" title="Stop timer">&#9209;</button></span>
         <span id="pos-counter"></span>
         <span id="word-counter" title="Click to cycle book / chapter word count"></span>
         <span id="zoom-control" hidden><button id="zoom-out">&#8722;</button><span id="zoom-level">100%</span><button id="zoom-in">+</button></span>
@@ -150,11 +148,18 @@
   <div id="hint" hidden></div>
 
   <script src="pocket-bridge.js"></script>
+  <script src="shared/text.js"></script>
+  <script src="shared/language-data.js"></script>
+  <script src="locales/en.js"></script>
+  <script src="renderer/i18n.js"></script>
   <script src="covers.js"></script>
   <!-- The renderer, in load order (classic scripts sharing one scope). -->
   <script src="renderer/00-core.js"></script>
   <script src="renderer/01-bookshelf.js"></script>
-  <script src="renderer/02-plugins.js"></script>
+  <script src="renderer/plugin-host/host.js"></script>
+  <script src="renderer/plugin-host/catalog.js"></script>
+  <script src="renderer/plugin-host/library-view.js"></script>
+  <script src="renderer/plugin-host/context.js"></script>
   <script src="renderer/03-editor-render.js"></script>
   <script src="renderer/04-editor-typing.js"></script>
   <script src="renderer/05-poetry.js"></script>
@@ -168,7 +173,7 @@
   <script src="renderer/13-library-search.js"></script>
   <script src="renderer/14-find-replace.js"></script>
   <script src="renderer/15-import.js"></script>
-  <script src="renderer/16-spellcheck-view.js"></script>
+  <script src="renderer/features/revision/english.js"></script>
   <script src="renderer/17-revision-pass.js"></script>
   <script src="renderer/18-read-aloud.js"></script>
   <script src="renderer/19-goals-settings.js"></script>
@@ -178,6 +183,7 @@
   <script src="renderer/23-help-fonts.js"></script>
   <script src="renderer/24-export.js"></script>
   <script src="renderer/25-publishing.js"></script>
+  <script src="renderer/features/app-info.js"></script>
   <script src="renderer/26-menu.js"></script>
   <script src="renderer/27-startup.js"></script>
   <script>

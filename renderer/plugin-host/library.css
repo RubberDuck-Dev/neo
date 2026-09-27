@@ -1,0 +1,20 @@
+/* Plugin library */
+.plugin-modal { width: min(760px, calc(100vw - 40px)); max-height: calc(100vh - 42px); overflow-y: auto; }
+.plugin-modal-head { display: flex; justify-content: space-between; gap: 20px; }
+.plugin-modal-head h2 { margin-bottom: 5px; }
+.plugin-modal-head p { color: var(--muted); margin-bottom: 20px; }
+.plugin-modal-head .m-cancel { border: 0; font-size: 22px; height: 28px; }
+.plugin-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.plugin-card { min-height: 154px; display: grid; grid-template-columns: 32px 1fr; gap: 10px; padding: 15px; border: 1px solid var(--line); border-radius: 7px; background: var(--surface); }
+.plugin-card.installed { border-color: var(--accent); background: var(--surface-raised); }
+.plugin-icon { color: var(--accent); font-size: 22px; line-height: 1; }
+.plugin-kicker { color: var(--muted); text-transform: uppercase; letter-spacing: 1px; font-size: 9px; }
+.plugin-card h3 { margin: 4px 0 5px; color: var(--ui-text); font-size: 15px; font-weight: 500; }
+.plugin-card p { color: var(--ui-text-soft); font-size: 12px; line-height: 1.4; margin: 0; }
+.plugin-card > button, .plugin-soon { grid-column: 2; justify-self: start; align-self: end; font-size: 11px; padding: 4px 9px; }
+.plugin-soon { color: var(--muted); border: 1px solid var(--line); border-radius: 4px; }
+.plugin-foot { color: var(--muted); font-size: 11px; margin: 16px 0 0; }
+.plugin-actions { grid-column: 2; display: flex; align-items: center; gap: 5px; align-self: end; }
+.plugin-actions button { font-size: 11px; padding: 4px 9px; }
+
+@media (max-width: 620px) { .plugin-grid { grid-template-columns: 1fr; } .plugin-actions { flex-wrap: wrap; } }

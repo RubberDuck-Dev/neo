@@ -1,6 +1,8 @@
 const { contextBridge, ipcRenderer, webUtils } = require('electron');
 
 contextBridge.exposeInMainWorld('neo', {
+  capabilities: { spellcheck: true, git: true },
+  stopSpellcheck: () => ipcRenderer.invoke('spell:stop'),
   readLibrary: () => ipcRenderer.invoke('library:read'),
   writeLibrary: (data) => ipcRenderer.invoke('library:write', data),
 

@@ -5,7 +5,6 @@
 /* ================================================================== */
 
 $$(".tab").forEach((tab) => {
-  tab.addEventListener("click", () => switchTab(tab.dataset.tab));
   tab.addEventListener("dblclick", async () => {
     const kind = tab.dataset.tab;
     if (kind !== "notes" && kind !== "outline") return;
@@ -27,8 +26,8 @@ $$(".tab").forEach((tab) => {
 
 // Plugin tabs are added after startup, so they use a small delegated route.
 $("#tabs").addEventListener("click", (e) => {
-  const tab = e.target.closest('.tab[data-tab="cards"]');
-  if (tab && !tab.hidden) switchTab("cards");
+  const tab = e.target.closest('.tab[data-tab]');
+  if (tab && !tab.hidden) switchTab(tab.dataset.tab);
 });
 
 // Darlings tab is a drop target for selected text
@@ -283,14 +282,13 @@ function switchTab(name) {
   $$(".tab").forEach((t) =>
     t.classList.toggle("active", t.dataset.tab === name),
   );
-  if (spellOn) setTimeout(scanSpellingHere, 0);
+  setTimeout(() => NeoPlugins.notify("selection"), 0);
   if (revisionOn && name !== "manuscript") toggleRevisionPass(false);
   if (name !== "manuscript") stopReadAloud(true);
   const paper = $("#paper");
   const aux = $("#aux-paper");
   const auxEditor = $("#aux-editor");
   const dList = $("#darlings-list");
-  const cardsList = $("#cards-list");
   const oList = $("#outline-list");
   const back = tabPlaces[name];
   const returnTo = () => {
@@ -313,7 +311,7 @@ function switchTab(name) {
   aux.hidden = false;
   auxEditor.hidden = true;
   dList.hidden = true;
-  cardsList.hidden = true;
+  document.querySelectorAll("[data-plugin-panel]").forEach((panel) => panel.hidden = true);
   oList.hidden = true;
 
   if (name === "darlings") {
@@ -321,10 +319,7 @@ function switchTab(name) {
     dList.hidden = false;
     renderDarlings();
     returnTo();
-  } else if (name === "cards") {
-    $("#aux-title").textContent = "Note cards";
-    cardsList.hidden = false;
-    renderNoteCards();
+  } else if (NeoPlugins.render("tab", name)) {
     returnTo();
   } else if (name === "outline") {
     $("#aux-title").textContent = book.tabNames.outline;

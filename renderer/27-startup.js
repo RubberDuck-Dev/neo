@@ -68,11 +68,15 @@ installLinuxBodyFonts();
 
 /* ================================================================== */
 
-loadLibrary().then(() => {
+loadPlugins().then(async () => {
+  configurePlugins();
+  await loadLibrary();
+  await migratePluginPreferences();
+  await NeoPlugins.reconcile();
   applyFonts();
-  applyPluginAppearance();
+  NeoPlugins.notify("refresh");
   typewriterEnabled = !!library.typewriter;
   applyTypewriter();
   focusModeOn = !!library.focusMode;
   applyFocusMode();
-});
+}).catch((err) => reportError(err.stack || String(err)));

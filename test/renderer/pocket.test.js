@@ -20,6 +20,7 @@ test.before(async () => {
   www = fs.mkdtempSync(path.join(os.tmpdir(), 'neo-pocket-'));
   fs.cpSync(path.join(ROOT, 'pocket', 'www'), www, { recursive: true });
   fs.cpSync(path.join(ROOT, 'renderer'), path.join(www, 'renderer'), { recursive: true });
+  for (const dir of ['plugins', 'shared', 'locales']) fs.cpSync(path.join(ROOT, dir), path.join(www, dir), { recursive: true });
   for (const f of ['covers.js', 'styles.css']) fs.copyFileSync(path.join(ROOT, f), path.join(www, f));
   fs.mkdirSync(path.join(www, 'fonts'));
   for (const f of fs.readdirSync(path.join(ROOT, 'fonts')).filter((n) => n.endsWith('.woff2'))) fs.copyFileSync(path.join(ROOT, 'fonts', f), path.join(www, 'fonts', f));

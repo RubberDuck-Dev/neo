@@ -144,7 +144,7 @@ function trackDailyWords(total) {
   }
   const wordsToday = dailyWords(today);
   const gc = $("#goal-counter");
-  if (!updateSprintCounter(total)) {
+  if (!NeoPlugins.render("counter", total)) {
     const goal = effectiveDailyTarget(total);
     gc.textContent = goal
       ? `${wordsToday.toLocaleString()} / ${goal.toLocaleString()} today`

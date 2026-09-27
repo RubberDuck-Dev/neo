@@ -7,7 +7,8 @@
 window.neo.onMenu(async (msg) => {
   if (msg.type === "flush") {
     flushAllSaves();
-    finishPendingCheckpoint("quit");
+    await finishPendingCheckpoint("quit");
+    await NeoPlugins.flush();
     window.neo.flushComplete();
   }
   if (msg.type === "help") showHelp();
@@ -17,8 +18,7 @@ window.neo.onMenu(async (msg) => {
   if (msg.type === "emailDraft") doEmailDraft();
   if (msg.type === "emailSettings") emailSettings();
   if (msg.type === "find") openSearch();
-  if (msg.type === "spellcheck") toggleSpellcheck();
-  if (msg.type === "spellLanguage") changeSpellLanguage(msg.value);
+  NeoPlugins.notify("command", msg.type, msg.value);
   if (msg.type === "revisionPass") toggleRevisionPass();
   if (msg.type === "readAloud") toggleReadAloud();
   if (msg.type === "publishingDetails") openPublishingDetails({ tab: msg.tab || "manuscript" });
@@ -46,7 +46,7 @@ window.neo.onMenu(async (msg) => {
     library.pageTheme = msg.value;
     await window.neo.writeLibrary(library);
     applyFonts();
-    applyPluginAppearance();
+    await NeoPlugins.reconcile();
   }
   if (msg.type === "fontSize") {
     const cur = library.editorFontSize || 17;

@@ -33,7 +33,7 @@ function sentenceRanges(p, fromNode = null, fromOffset = 0) {
     return [nodes[i], Math.min(offset - starts[i], nodes[i].data.length)];
   };
   const out = [];
-  const re = /[^.!?…]+(?:[.!?…]+["”’)\]]*|$)\s*/g;
+  const re = /[^.!?…。！？]+(?:[.!?…。！？]+["”’)\]]*|$)\s*/g;
   let m;
   while ((m = re.exec(text))) {
     if (!m[0]) { re.lastIndex++; continue; }
@@ -41,7 +41,7 @@ function sentenceRanges(p, fromNode = null, fromOffset = 0) {
     if (end <= skip) continue;
     const start = m.index; // the caret's whole sentence, not half of it
     const said = text.slice(start, end).trim();
-    if (!/[A-Za-z0-9]/.test(said)) continue;
+    if (!/[\p{L}\p{N}]/u.test(said)) continue;
     const range = new Range();
     range.setStart(...at(start));
     range.setEnd(...at(end));

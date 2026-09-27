@@ -1,0 +1,13 @@
+#bottombar.sprint-finished { animation: sprint-finished 0.8s ease-in-out 4; }
+@keyframes sprint-finished {
+  50% { border-top-color: var(--accent); background: var(--surface-raised); }
+}
+#sprint-controls { display: inline-flex; gap: 5px; align-items: center; }
+#sprint-controls button { width: 17px; height: 17px; display: inline-flex; align-items: center; justify-content: center; background: none; border: none; color: inherit; font-size: 14px; padding: 0; cursor: pointer; line-height: 1; }
+#sprint-controls button:hover { color: var(--accent); }
+.stats-sprint-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.stats-sprint-option { display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 8px; min-height: 40px; padding: 5px 7px; border: 1px solid var(--line); border-radius: 6px; }
+.stats-sprint-option label { display: flex; align-items: center; gap: 5px; white-space: nowrap; }
+.stats-sprint-option input { width: 76px; }
+.stats-sprint-option button, .stats-sprint-live button { min-width: 58px; padding: 6px 10px; background: var(--accent); border: none; border-radius: 5px; color: var(--on-accent); font-size: 12px; }
+.stats-sprint-live { display: flex; gap: 8px; align-items: center; min-height: 40px; padding: 5px 7px; border: 1px solid var(--line); border-radius: 6px; grid-column: 1 / -1; }

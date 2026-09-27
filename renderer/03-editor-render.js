@@ -5,6 +5,7 @@
 /* ================================================================== */
 
 async function openBook(bookId) {
+  await NeoPlugins.closeBook();
   tabPlaces = {}; // a fresh book starts with fresh places
   dirtyChapters = new Set();
   metaSavePending = false;
@@ -18,7 +19,6 @@ async function openBook(bookId) {
   }
   stickies = await window.neo.readJSON(bookId, "stickies", []);
   darlings = await window.neo.readJSON(bookId, "darlings", []);
-  noteCards = await window.neo.readJSON(bookId, "note-cards", []);
 
   $("#bookshelf-view").hidden = true;
   $("#editor-view").hidden = false;
@@ -35,7 +35,7 @@ async function openBook(bookId) {
   $("#tp-author").textContent = book.author || "Anonymous";
   $$('.tab[data-tab="notes"]')[0].textContent = book.tabNames.notes;
   $$('.tab[data-tab="outline"]')[0].textContent = book.tabNames.outline;
-  applyPluginAppearance();
+  await NeoPlugins.reconcile();
 
   renderChapters();
   renderStickies();

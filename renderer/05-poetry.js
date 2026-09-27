@@ -261,10 +261,7 @@ document.addEventListener('selectionchange', () => {
   }
   // during a spellcheck pass, each chapter scans as the caret arrives
   if (revisionOn && caretP) revisionScanHere();
-  if (spellOn && caretP) {
-    const ch = caretP.closest('.chapter');
-    if (ch) scanSpellingIn(ch.querySelector('.chapter-body'), ch.dataset.id);
-  }
+  if (caretP) NeoPlugins.notify("selection");
   if (focusModeOn) markFocusParagraph(caretP);
   // keep the Format menu's Poetry Paragraph check in step with the caret
   // (the drop cap's cap-off is handled per edit in the beforeinput handler)

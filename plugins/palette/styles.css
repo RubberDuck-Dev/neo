@@ -1,0 +1,46 @@
+.palette-picker { display: block; color: var(--ui-text-soft); font-size: 11px; margin-top: 10px; }
+.palette-picker select { margin-left: 6px; background: var(--bg); border: 1px solid var(--line); color: var(--ui-text); border-radius: 3px; padding: 3px; font-size: 11px; }
+.palette-studio-link { display: block; margin-top: 10px; padding: 2px 0; border: 0; background: none; color: var(--accent); font-size: 14px; font-weight: 500; }
+.palette-studio-link:hover { text-decoration: underline; }
+.palette-reset { display: block; margin-top: 7px; padding: 0; border: 0; background: none; color: var(--muted); font-size: 10px; text-decoration: underline; }
+.palette-reset:hover { color: var(--accent); }
+
+/* Palette Studio is intentionally a separate screen: the preview makes each
+   color role concrete before it is saved into a writer's palette. */
+.palette-studio-screen { width: min(840px, calc(100vw - 40px)); max-height: calc(100vh - 32px); overflow-y: auto; }
+.palette-studio-top { display: flex; justify-content: space-between; align-items: center; }
+.palette-back { padding-left: 0; color: var(--accent); }
+.palette-studio-title { margin: 8px 0 16px; }
+.palette-studio-title p { color: var(--muted); margin: 0; }
+.palette-studio-controls { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin: 0 0 14px; padding: 9px 11px; background: var(--surface); border: 1px solid var(--line); border-radius: 6px; }
+.palette-studio-controls label { display: flex; align-items: center; gap: 8px; margin: 0; color: var(--ui-text-soft); font-size: 12px; }
+.palette-studio-controls select { background: var(--bg); border: 1px solid var(--line); color: var(--ui-text); border-radius: 4px; padding: 5px 8px; font-size: 12px; }
+.palette-studio-actions { display: flex; align-items: center; gap: 12px; }
+.palette-studio-controls .palette-reset { margin: 0; font-size: 11px; }
+.palette-delete { border: 0; padding: 0; background: none; color: var(--danger-muted); font-size: 11px; text-decoration: underline; }
+.palette-delete:hover { color: var(--danger); }
+.palette-preview { --preview-bg: var(--bg); --preview-pane: var(--pane); --preview-paper: var(--paper); --preview-ink: var(--ink); --preview-muted: var(--paper-muted); --preview-faint: var(--paper-faint); --preview-accent: var(--accent); --preview-on-accent: var(--on-accent); --preview-danger: var(--danger); display: grid; grid-template-columns: 118px 1fr; grid-template-rows: 28px 164px; overflow: hidden; border: 1px solid var(--line); border-radius: 8px; background: var(--preview-bg); margin-bottom: 18px; }
+.palette-preview-chrome { grid-column: 1 / -1; display: flex; justify-content: space-between; align-items: center; padding: 0 10px; color: var(--preview-accent); font-size: 10px; letter-spacing: 2px; }
+.palette-preview-pane { padding: 14px 11px; background: var(--preview-pane); color: var(--preview-muted); font-size: 10px; line-height: 2; }
+.palette-preview-pane strong { color: var(--preview-ink); font-weight: 500; }
+.palette-preview-page { margin: 10px; padding: 15px; background: var(--preview-paper); color: var(--preview-ink); overflow: hidden; }
+.palette-preview-page small { color: var(--preview-muted); font-size: 8px; letter-spacing: 1px; }
+.palette-preview-page h3 { font: 700 17px Georgia, serif; margin: 6px 0; }
+.palette-preview-page p { color: var(--preview-muted); font: 11px/1.35 Georgia, serif; margin: 0 0 7px; }
+.palette-preview-page em { display: block; color: var(--preview-faint); font: italic 10px Georgia, serif; }
+.palette-preview-page button { float: right; margin-top: -5px; background: var(--preview-accent); color: var(--preview-on-accent); border: 0; border-radius: 3px; padding: 4px 7px; font-size: 9px; }
+.palette-group { display: grid; grid-template-columns: 180px 1fr; gap: 14px; border-top: 1px solid var(--line); padding: 10px 0; }
+.palette-group h3 { color: var(--accent); font-size: 12px; font-weight: 500; margin: 0 0 4px; }
+.palette-group p { color: var(--muted); font-size: 11px; line-height: 1.4; margin: 0; }
+.palette-color-grid { display: grid; grid-template-columns: repeat(2, minmax(170px, 1fr)); gap: 4px 12px; align-content: start; }
+.modal .palette-swatch { display: grid; grid-template-columns: minmax(0, 1fr) 78px; align-items: center; gap: 8px; min-width: 0; min-height: 34px; margin-bottom: 0; color: var(--ui-text-soft); font-size: 11px; cursor: pointer; }
+.modal .palette-swatch input { grid-column: 2; grid-row: 1; position: static; opacity: 1; width: 78px; height: 28px; margin: 0; padding: 0; border: 1px solid var(--line-strong); border-radius: 5px; background: transparent; cursor: pointer; }
+.modal .palette-swatch > span:last-child { grid-column: 1; grid-row: 1; }
+.palette-swatch-dot { display: none; }
+.palette-swatch:hover input { outline: 2px solid var(--accent); outline-offset: 2px; }
+.palette-studio-save { display: flex; justify-content: flex-end; gap: 10px; padding-top: 10px; }
+.palette-studio-save input { width: 190px; background: var(--bg); border: 1px solid var(--line); color: var(--ui-text); border-radius: 5px; padding: 7px 9px; font-size: 12px; }
+@media (max-width: 620px) { .palette-group { grid-template-columns: 1fr; gap: 6px; } .palette-color-grid { grid-template-columns: 1fr; gap: 3px; } .palette-studio-controls { align-items: flex-start; flex-direction: column; gap: 8px; } }
+
+body[data-palette="ink"] { --bg: #151d29; --bg-soft: #1d2838; --pane: #172230; --accent: #4e8bc5; --muted: #9aafc5; --paper: #eef4fa; --ink: #17263a; --paper-muted: #52677d; --paper-faint: #aab9c8; }
+body[data-palette="moss"] { --bg: #19201b; --bg-soft: #222b23; --pane: #1c261e; --accent: #819b4e; --muted: #a2ad94; --paper: #f4f5ed; --ink: #263127; --paper-muted: #5d6b57; --paper-faint: #b4baaa; }

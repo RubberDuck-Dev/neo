@@ -17,7 +17,7 @@ Get the latest installer from the **[Releases page](../../releases)**:
 
 **The bookshelf** 
 
-Your library looks like a bookshelf, not a file list. Labeled shelves you organize however you like — by series, by status, by pen name. Progress bars on the covers show how far you are from your word goals. You can drag-and-drop books anywhere. You can also drag shelves around and put cover art on your titles.
+Your library looks like a bookshelf, not a file list. Labeled shelves you organize however you like — by series, by status, by pen name. Progress bars on the covers show how far you are from your word goals. You can drag-and-drop books anywhere. You can also drag shelves around and put cover art on your titles. Use a shelf’s ⋯ menu to delete it while keeping its books; right-click a book and choose “Move to another author…” to change its pen name.
 
 **Search every book**
 
@@ -65,7 +65,7 @@ Every book gets a cover! New books are dressed in a seeded abstract (six art sty
 
 **Goals and momentum** 
 
-Daily word goals and a NaNoWriMo-style progress chart. Want to race the clock? Install Writing Sprints from ✦ Plugins: a timer or word-count sprint takes over the word counter until it's done.
+Daily word goals and a NaNoWriMo-style progress chart. Want to race the clock? Enable Writing Sprints from ✦ Plugins: a timer or word-count sprint takes over the word counter until it's done.
 
 **Exports** 
 
@@ -81,11 +81,13 @@ Continuous autosave, daily zip backups kept for two weeks, everything stored as 
 
 **Version history**
 
-Optional local checkpoints preserve complete book states while you write. Browse them from File → Sync Settings; Compare shows exactly what changed since any version, chapter by chapter, before you decide to restore it. In File → Sync Settings, you can connect an empty GitHub repository for the entire NEO Library. NEO creates its local history automatically, and you can opt into background GitHub backups after each version. NEO never creates a public repository. New computer? "Set up this computer from a GitHub backup…" in the same window downloads the library and picks up the backups where they left off; anything already on that computer is set aside, not deleted.
+Optional local checkpoints preserve complete book states while you write. Browse them from File → Sync Settings; Compare shows exactly what changed since any version, chapter by chapter, before you decide to restore it. Enable GitHub backup in ✦ Plugins, then use File → Sync Settings to connect an empty GitHub repository for the entire NEO Library. NEO creates its local history automatically, and you can opt into background GitHub backups after each version. NEO never creates a public repository. New computer? "Set up this computer from a GitHub backup…" in the same window downloads the library and picks up the backups where they left off; anything already on that computer is set aside, not deleted.
+
+Spellcheck uses bundled offline dictionaries, loaded only when needed. Choose a book’s manuscript language in Progress & Settings; it controls export metadata independently of the spellcheck dictionary. Revision Pass currently supports English manuscripts.
 
 ## Your files
 
-Everything lives in `~/Documents/NEO Library` — one folder per book, chapters as readable HTML, metadata as JSON. Open them in your favorite text editor. To keep it somewhere else (a sync folder, an external drive), use File → Library Folder…; NEO copies it there and leaves the original untouched.
+New Linux libraries live in `~/Documents/NEO-Library`; macOS and Windows default to `~/Documents/NEO Library`. Existing libraries keep their locations — one folder per book, chapters as readable HTML, metadata as JSON. Open them in your favorite text editor. To keep it somewhere else (a sync folder, an external drive), use File → Library Folder…. Select the exact empty directory you want, with any name (spaces are optional), or select an existing NEO library. NEO copies your library there and leaves the original untouched.
 
 ## Building from source (for the eggheads):
 
@@ -104,7 +106,7 @@ restart the app automatically.
 
 To build installers: `npm install electron-builder --save-dev`, then `npm run package` (macOS), `npm run package:win` (Windows), or `npm run package:all`. Output lands in `dist/`.
 
-The app is very simple: an Electron shell (`main.js`), a preload bridge (`preload.js`), and a renderer (`renderer/*.js` + `styles.css` + `index.html`). The renderer is split by concern (bookshelf, editor, outline, export…) into plain scripts that load in order, so each feature lives in a file you can find. If you know JavaScript, you can change NEO. Have at it.
+The app uses an Electron shell (`main.js`), focused services in `main/`, a preload bridge (`preload.js`), and a plain-JavaScript renderer. Bundled optional tools live in `plugins/`, each with its own implementation and styles. `renderer/plugin-host/` connects them to the writing room and presents the Plugin Library. Shared text rules and language metadata live in `shared/`. See [CONTRIBUTING.md](CONTRIBUTING.md) for the boundaries and how to add a plugin.
 
 ## Roadmap (things I'm dreaming up but may never get to):
 

@@ -14,7 +14,9 @@
     "package": "electron-builder --mac",
     "package:win": "electron-builder --win",
     "package:linux": "electron-builder --linux",
-    "package:all": "electron-builder --mac --win --linux"
+    "package:all": "electron-builder --mac --win --linux",
+    "test:spell-worker": "electron test/integration/spell-worker.cjs",
+    "test:packaged-spell": "node test/integration/packaged-spell.cjs"
   },
   "build": {
     "appId": "com.hughhowey.neo",
@@ -117,8 +119,5 @@
     "electron-updater": "^6.3.9",
     "jszip": "^3.10.1",
     "nspell": "^2.1.5"
-  },
-  "allowScripts": {
-    "electron@33.4.11": true
   }
 }

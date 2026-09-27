@@ -203,7 +203,7 @@ async function renderShelves() {
   const view = $("#bookshelf-view");
   const keepScroll = view.scrollTop; // re-rendering must not move the page
   $("#author-chip").textContent = displayAuthor();
-  applyPluginAppearance();
+  await NeoPlugins.reconcile();
   const wrap = $("#shelves");
   // the new shelves are built off-screen and swapped in whole, so the page
   // never goes blank while books are read from disk — no flash on a drop
@@ -301,40 +301,15 @@ async function renderShelves() {
       }
     });
     // right-click a shelf label: publish it as one book, or delete it
-    label.addEventListener("contextmenu", async (e) => {
-      e.preventDefault();
-      const choice = await optionModal(`Shelf “${shelf.name}”`, null, [
-        {
-          label: "Export shelf as anthology…",
-          desc: `Collect ${shelf.bookIds.length ? "its " + shelf.bookIds.length : "the"} work${shelf.bookIds.length === 1 ? "" : "s"}, in shelf order, into a single book with a table of contents.`,
-          value: "anthology",
-        },
-        {
-          label: "Delete shelf",
-          desc: "Books move to another shelf. Nothing is deleted from disk.",
-          danger: true,
-          value: "del",
-        },
-      ]);
-      if (choice === "anthology") {
-        await exportShelfAnthology(shelf);
-      } else if (choice === "del") {
-        const mine = shelvesFor(currentAuthor().id);
-        if (mine.length === 1) {
-          toast(
-            "This is your only shelf — add another before deleting this one",
-          );
-          return;
-        }
-        const other = mine.find((s) => s.id !== shelf.id);
-        for (const id of shelf.bookIds) {
-          if (!other.bookIds.includes(id)) other.bookIds.push(id);
-        }
-        library.shelves = library.shelves.filter((s) => s.id !== shelf.id);
-        await window.neo.writeLibrary(library);
-        renderShelves();
-      }
-    });
+    const shelfMenu = () => openShelfMenu(shelf);
+    label.addEventListener("contextmenu", (event) => { event.preventDefault(); shelfMenu(); });
+    const menuButton = document.createElement("button");
+    menuButton.className = "shelf-menu btn-quiet";
+    menuButton.textContent = "⋯";
+    menuButton.title = `Manage shelf ${shelf.name}`;
+    menuButton.setAttribute("aria-label", menuButton.title);
+    menuButton.onclick = shelfMenu;
+    sec.appendChild(menuButton);
     const row = document.createElement("div");
     row.className = "shelf-books";
     row.dataset.shelfId = shelf.id;
@@ -623,6 +598,11 @@ function bookTile(meta) {
     }
     options.push(
       {
+        label: "Move to another author…",
+        desc: "Move this book to another pen name and update its author.",
+        value: "move-author",
+      },
+      {
         label: "Set word goal…",
         desc: "Adds the subtle progress bar to the cover.",
         value: "goal",
@@ -642,7 +622,9 @@ function bookTile(meta) {
       },
     );
     const choice = await optionModal(`“${meta.title}”`, null, options);
-    if (choice === "cover") {
+    if (choice === "move-author") {
+      await chooseBookAuthor(meta.id);
+    } else if (choice === "cover") {
       const src = await window.neo.pickCover();
       if (!src) return;
       const fname = await window.neo.setCover(meta.id, src);
@@ -1016,3 +998,83 @@ $("#author-chip").onclick = async () => {
   await window.neo.writeLibrary(library);
   renderShelves();
 };
+
+
+// Shelf membership is the single source of book ownership. No files move.
+async function moveBookToAuthor(bookId, authorId, shelfId) {
+  const author = library.authors.find((item) => item.id === authorId);
+  if (!author) throw new Error("Author no longer exists");
+  let destination = shelvesFor(authorId).find((item) => item.id === shelfId);
+  if (shelfId && !destination) throw new Error("Destination shelf no longer exists");
+  const meta = await window.neo.readBookMeta(bookId);
+  if (!meta) throw new Error("Book no longer exists");
+  const previous = structuredClone(library.shelves);
+  if (!destination) {
+    destination = { id: "shelf-" + crypto.randomUUID(), name: "Works in Progress", authorId, bookIds: [] };
+    library.shelves.push(destination);
+  }
+  for (const shelf of library.shelves) shelf.bookIds = shelf.bookIds.filter((id) => id !== bookId);
+  destination.bookIds.push(bookId);
+  try { await window.neo.writeLibrary(library); }
+  catch (err) { library.shelves = previous; throw err; }
+  // Persist ownership first; startup can repair the display name if this write fails.
+  meta.author = author.name;
+  await window.neo.writeBookMeta(bookId, meta);
+  await renderShelves();
+  toast(`Moved “${meta.title}” to ${author.name}`);
+}
+
+async function chooseBookAuthor(bookId) {
+  const owner = ownerOfBook(bookId);
+  const authors = library.authors.filter((a) => a.id !== owner?.id);
+  if (!authors.length) { toast("Add another pen name from the author menu first"); return; }
+  const authorId = await optionModal("Move book to author", null, authors.map((a) => ({ label: escHtml(a.name), value: a.id })));
+  if (!authorId) return;
+  const shelves = shelvesFor(authorId);
+  let shelfId = shelves[0]?.id;
+  if (shelves.length > 1) {
+    shelfId = await optionModal("Choose destination shelf", null, shelves.map((s) => ({ label: escHtml(s.name), value: s.id })));
+    if (!shelfId) return;
+  }
+  try { await moveBookToAuthor(bookId, authorId, shelfId); }
+  catch (err) { toast(`Could not finish moving the book: ${err.message}`); }
+}
+
+async function deleteShelf(shelfId, destinationId) {
+  const shelf = library.shelves.find((item) => item.id === shelfId);
+  if (!shelf) return;
+  const ownerId = shelf.authorId || library.authors[0].id;
+  const previous = structuredClone(library.shelves);
+  let destination = shelvesFor(ownerId).find((item) => item.id !== shelfId && item.id === destinationId);
+  if (destinationId && !destination) throw new Error("Destination shelf no longer exists");
+  if (shelf.bookIds.length && !destination) {
+    destination = { id: "shelf-" + crypto.randomUUID(), name: "Unsorted", authorId: ownerId, bookIds: [] };
+    library.shelves.push(destination);
+  }
+  if (destination) for (const id of shelf.bookIds) if (!destination.bookIds.includes(id)) destination.bookIds.push(id);
+  library.shelves = library.shelves.filter((item) => item.id !== shelfId);
+  try { await window.neo.writeLibrary(library); }
+  catch (err) { library.shelves = previous; throw err; }
+  await renderShelves();
+  toast(destination ? `Shelf deleted. Books moved to “${destination.name}”.` : "Empty shelf deleted");
+}
+
+async function openShelfMenu(shelf) {
+  const choice = await optionModal(`Shelf “${escHtml(shelf.name)}”`, null, [
+    { label: "Export shelf as anthology…", value: "anthology" },
+    { label: "Delete shelf", desc: "Keep all books. Choose another shelf, or move them to Unsorted.", value: "delete" }
+  ]);
+  if (choice === "anthology") { await exportShelfAnthology(shelf); return; }
+  if (choice !== "delete") return;
+  let destinationId;
+  if (shelf.bookIds.length) {
+    const others = shelvesFor(shelf.authorId || library.authors[0].id).filter((item) => item.id !== shelf.id);
+    destinationId = await optionModal("Keep these books on…", null, [
+      ...others.map((item) => ({ label: escHtml(item.name), value: item.id })),
+      { label: "A new Unsorted shelf", value: "__new__" }
+    ]);
+    if (!destinationId) return;
+  }
+  try { await deleteShelf(shelf.id, destinationId === "__new__" ? undefined : destinationId); }
+  catch (err) { toast(`Could not delete the shelf: ${err.message}`); }
+}

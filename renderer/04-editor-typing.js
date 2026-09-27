@@ -21,7 +21,7 @@ function wireChapterBody(body, chId) {
     wordCache[chId] = null;
     scheduleChapterSave(chId);
     scheduleCheckpoint("writing");
-    if (spellOn) scheduleSpellRescan(chId, body);
+    NeoPlugins.notify("changed", chId, body);
     if (revisionOn) scheduleRevisionRescan(chId, body);
     updateCounters();
     scheduleNavRefresh();

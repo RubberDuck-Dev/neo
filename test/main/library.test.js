@@ -10,7 +10,7 @@ const neo = loadMain();
 
 test('an unconfigured library lives in Documents', () => {
   assert.equal(neo.internals.resolveLibraryAtStartup(), null);
-  assert.equal(neo.libraryDir, path.join(neo.home, 'Documents', 'NEO Library'));
+  assert.equal(neo.libraryDir, path.join(neo.home, 'Documents', process.platform === 'linux' ? 'NEO-Library' : 'NEO Library'));
   neo.internals.ensureLibrary();
   assert.ok(fs.existsSync(path.join(neo.libraryDir, 'library.json')));
 });
@@ -61,7 +61,7 @@ test('moving the library copies it and leaves the original', async () => {
   neo.dialogAnswers.push({ canceled: false, filePaths: [path.join(neo.home, 'Dropbox')] });
   const before = neo.libraryDir;
   await neo.internals.changeLibraryLocation();
-  assert.equal(neo.libraryDir, path.join(neo.home, 'Dropbox', 'NEO Library'));
+  assert.equal(neo.libraryDir, path.join(neo.home, 'Dropbox'));
   assert.ok(fs.existsSync(path.join(neo.libraryDir, 'book-a', 'book.json')));
   assert.ok(fs.existsSync(path.join(before, 'book-a', 'book.json')), 'original untouched');
   assert.ok(fs.readdirSync(path.join(before, 'Backups')).some((f) => f.startsWith('neo-safety-')));
@@ -72,6 +72,6 @@ test('moving the library copies it and leaves the original', async () => {
 test('a missing library folder falls back to Documents instead of starting empty', () => {
   fs.renameSync(path.join(neo.home, 'Dropbox'), path.join(neo.home, 'Dropbox-offline'));
   const missing = neo.internals.resolveLibraryAtStartup();
-  assert.equal(missing, path.join(neo.home, 'Dropbox', 'NEO Library'));
-  assert.equal(neo.libraryDir, path.join(neo.home, 'Documents', 'NEO Library'));
+  assert.equal(missing, path.join(neo.home, 'Dropbox'));
+  assert.equal(neo.libraryDir, path.join(neo.home, 'Documents', process.platform === 'linux' ? 'NEO-Library' : 'NEO Library'));
 });

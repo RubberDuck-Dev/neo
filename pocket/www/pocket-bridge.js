@@ -200,6 +200,7 @@
     openRelease: async () => true,
     fullscreenEscape: async () => false,
     fullscreenToggle: async () => true,
+    capabilities: { spellcheck: false, git: false },
     spellCheckWords: async (words) => { const o = {}; for (const w of words) o[w] = true; return o; },
     spellSuggest: async () => [],
     spellLearn: async () => true,

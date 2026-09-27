@@ -7,8 +7,8 @@ const path = require('path');
 const fs = require('fs');
 const os = require('os');
 const crypto = require('crypto');
-const { execFile } = require('child_process');
 const flushAcknowledgements = new Map();
+const defaultLibraryPath = require('./main/library-path');
 
 // macOS Chromium's "smart delete" also removes whitespace around a deleted
 // selection, and that pass can duplicate characters. Deletes stay literal.
@@ -19,7 +19,7 @@ app.commandLine.appendSwitch('blink-settings', 'smartInsertDeleteEnabled=false')
 // ---------------------------------------------------------------------------
 // Resolved properly at startup via app.getPath('documents') — this default
 // covers any early access and non-redirected setups.
-let LIBRARY_DIR = path.join(os.homedir(), 'Documents', 'NEO Library');
+let LIBRARY_DIR = defaultLibraryPath(path.join(os.homedir(), 'Documents'));
 let LIBRARY_FILE = path.join(LIBRARY_DIR, 'library.json');
 
 // Where the library lives can be chosen (File → Library Folder…). The
@@ -53,7 +53,7 @@ function emptyDir(dir) {
 // folder or external drive that isn't mounted), so the writer can be told.
 // A fresh library is never created at a configured path that has vanished.
 function resolveLibraryAtStartup() {
-  const defaultDir = path.join(app.getPath('documents'), 'NEO Library');
+  const defaultDir = defaultLibraryPath(app.getPath('documents'));
   const settings = readSettings();
   // earlier fork builds kept the choice in preferences.json as libraryPath
   if (!settings.libraryDir) {
@@ -118,92 +118,7 @@ function writeCatalog() {
   }
 }
 
-function readJSON(file, fallback) {
-  try {
-    return JSON.parse(fs.readFileSync(file, 'utf8'));
-  } catch {
-    return fallback;
-  }
-}
-
-function atomicWrite(file, data) {
-  const tmp = path.join(
-    path.dirname(file),
-    `.${path.basename(file)}.${process.pid}.${Date.now()}.tmp`,
-  );
-  let fd;
-  try {
-    fd = fs.openSync(tmp, 'w');
-    fs.writeFileSync(fd, data);
-    fs.fsyncSync(fd);
-  } finally {
-    if (fd !== undefined) fs.closeSync(fd);
-  }
-  fs.renameSync(tmp, file);
-}
-
-async function atomicWriteAsync(file, data) {
-  const tmp = path.join(path.dirname(file), `.${path.basename(file)}.${process.pid}.${Date.now()}.${Math.random().toString(36).slice(2)}.tmp`);
-  let handle;
-  try {
-    handle = await fs.promises.open(tmp, 'w');
-    await handle.writeFile(data);
-    await handle.sync();
-  } finally {
-    if (handle) await handle.close();
-  }
-  try {
-    await fs.promises.rename(tmp, file);
-  } catch (err) {
-    await fs.promises.rm(tmp, { force: true });
-    throw err;
-  }
-}
-
-function writeJSON(file, data) {
-  atomicWrite(file, JSON.stringify(data, null, 2));
-}
-
-// Calls from a renderer are asynchronous. Serializing every write for a book
-// prevents an older debounce from landing after a newer edit, and gives a
-// checkpoint a coherent point in the book's on-disk history.
-const bookWriteQueues = new Map();
-function queueBookWrite(bookId, work) {
-  const previous = bookWriteQueues.get(bookId) || Promise.resolve();
-  const next = previous.catch(() => {}).then(work);
-  bookWriteQueues.set(bookId, next);
-  next.catch((err) => logError('book-save', err));
-  return next;
-}
-
-async function drainBookWrites() {
-  await Promise.allSettled([...bookWriteQueues.values()]);
-}
-
-// Git runs without a terminal. Prompts are disabled so a missing credential
-// fails fast instead of waiting forever on a TTY, and every call has a
-// timeout so a dead network can never wedge the queue behind it.
-const GIT_TIMEOUT_MS = 30 * 1000;
-const GIT_PUSH_TIMEOUT_MS = 90 * 1000;
-function gitEnv() {
-  const extra = process.platform === 'win32' ? [] : ['/opt/homebrew/bin', '/usr/local/bin', '/usr/bin', '/bin'];
-  const parts = String(process.env.PATH || '').split(path.delimiter).filter(Boolean);
-  for (const dir of extra) if (!parts.includes(dir)) parts.push(dir);
-  return { ...process.env, PATH: parts.join(path.delimiter), GIT_TERMINAL_PROMPT: '0', GCM_INTERACTIVE: 'auto' };
-}
-
-function runGit(args, { timeout = GIT_TIMEOUT_MS, cwd = LIBRARY_DIR } = {}) {
-  return new Promise((resolve, reject) => {
-    execFile('git', args, { cwd, windowsHide: true, timeout, env: gitEnv() }, (error, stdout, stderr) => {
-      if (error) {
-        error.stdout = stdout;
-        error.stderr = stderr;
-        if (error.killed) error.message = `git ${args[0]} timed out`;
-        reject(error);
-      } else resolve({ stdout: stdout.trim(), stderr: stderr.trim() });
-    });
-  });
-}
+const { readJSON, writeJSON, atomicWrite, atomicWriteAsync, queueBookWrite, drainBookWrites } = require('./main/storage')({ logError });
 
 function samePath(a, b) {
   try {
@@ -217,428 +132,14 @@ function samePath(a, b) {
   }
 }
 
-async function libraryGitStatus() {
-  try {
-    await runGit(['--version']);
-  } catch {
-    return { available: false, initialized: false };
-  }
-  try {
-    // Only a repository rooted at the library counts. A repo in a parent
-    // folder (dotfiles in ~, a Documents repo) must never receive NEO's
-    // commits or have its origin rewritten.
-    const top = await runGit(['rev-parse', '--show-toplevel']);
-    if (!top.stdout || !samePath(top.stdout, LIBRARY_DIR)) {
-      return { available: true, initialized: false, parentRepo: top.stdout || null };
-    }
-    const [branch, remote, status] = await Promise.all([
-      runGit(['branch', '--show-current']),
-      runGit(['remote', 'get-url', 'origin']).catch(() => ({ stdout: '' })),
-      runGit(['status', '--porcelain'])
-    ]);
-    return { available: true, initialized: true, branch: branch.stdout || 'main', remote: remote.stdout || null, clean: !status.stdout, lastPushAt: readLastPush() };
-  } catch {
-    return { available: true, initialized: false };
-  }
-}
+const { queueGitCommit, settleGit, pushLeftovers } = require('./plugins/github-backup/main')({
+  getLibraryDir: () => LIBRARY_DIR, getLibraryFile: () => LIBRARY_FILE,
+  readJSON, writeJSON, atomicWrite, drainBookWrites, logError, samePath,
+  sendToWindow, writeCatalog, quietLibrary, ipcMain,
+  reloadWindows: () => { for (const win of BrowserWindow.getAllWindows()) win.reload(); }
+});
 
-// Files that stay on this computer. library.json holds the email address,
-// email method, and GitHub address; a scrubbed copy is committed instead so
-// shelves and authors can still be restored from the backup.
-const GIT_IGNORE_LINES = [
-  '.neo-history/',
-  'Backups/',
-  'Exports/',
-  'neo-errors.log',
-  'library.json',
-  '*.tmp',
-  '.DS_Store'
-];
-const LIBRARY_BACKUP_FILE = 'library.backup.json';
-const PRIVATE_LIBRARY_KEYS = ['emailAddress', 'emailMethod'];
-
-function ensureGitIgnore() {
-  const file = path.join(LIBRARY_DIR, '.gitignore');
-  let current = '';
-  try { current = fs.readFileSync(file, 'utf8'); } catch { /* new file */ }
-  const have = new Set(current.split(/\r?\n/).map((line) => line.trim()));
-  const missing = GIT_IGNORE_LINES.filter((line) => !have.has(line));
-  if (!missing.length) return;
-  const header = current ? '' : '# NEO keeps these on this computer only. Git commits are the portable history.\n';
-  const base = current && !current.endsWith('\n') ? current + '\n' : current;
-  atomicWrite(file, header + base + missing.join('\n') + '\n');
-}
-
-function writeLibraryBackup() {
-  const lib = readJSON(LIBRARY_FILE, null);
-  if (!lib) return;
-  const copy = JSON.parse(JSON.stringify(lib));
-  for (const key of PRIVATE_LIBRARY_KEYS) delete copy[key];
-  if (copy.history && copy.history.git) delete copy.history.git.remoteUrl;
-  // submission contact details (legal name, address, phone) stay local
-  for (const author of copy.authors || []) delete author.submission;
-  const next = JSON.stringify(copy, null, 2);
-  const file = path.join(LIBRARY_DIR, LIBRARY_BACKUP_FILE);
-  let prev = null;
-  try { prev = fs.readFileSync(file, 'utf8'); } catch { /* first write */ }
-  if (prev !== next) atomicWrite(file, next);
-}
-
-// Commits need an identity. When the library repo has none (and no global
-// one is set), fall back to a neutral identity instead of failing silently.
-async function ensureGitIdentity() {
-  const has = async (key) => runGit(['config', key]).then((r) => !!r.stdout, () => false);
-  if (!(await has('user.name'))) await runGit(['config', 'user.name', 'NEO Writer']);
-  if (!(await has('user.email'))) await runGit(['config', 'user.email', 'writer@neo.local']);
-}
-
-async function stageLibrary() {
-  await ensureGitIdentity();
-  ensureGitIgnore();
-  writeLibraryBackup();
-  // Libraries connected before library.json was ignored still track it.
-  await runGit(['rm', '--cached', '--quiet', '--ignore-unmatch', 'library.json']);
-  await runGit(['add', '--all']);
-}
-
-async function commitStaged(message) {
-  try {
-    await runGit(['diff', '--cached', '--quiet']);
-    return false;
-  } catch (err) {
-    if (err.code !== 1) throw err;
-  }
-  await runGit(['commit', '--quiet', '-m', message]);
-  return true;
-}
-
-async function initializeLibraryGit(authorName = 'NEO Writer', authorEmail = 'writer@neo.local') {
-  const status = await libraryGitStatus();
-  if (!status.available) throw new Error('Git is not installed');
-  if (!status.initialized) await runGit(['init', '-b', 'main']);
-  if (authorName) await runGit(['config', 'user.name', authorName]);
-  if (authorEmail) await runGit(['config', 'user.email', authorEmail]);
-  await stageLibrary();
-  await commitStaged('NEO library baseline');
-  return libraryGitStatus();
-}
-
-async function ensureLibraryGitMainBranch() {
-  const status = await libraryGitStatus();
-  if (!status.initialized || status.branch === 'main') return status;
-  await runGit(['branch', '-M', 'main']);
-  return libraryGitStatus();
-}
-
-async function connectLibraryGitRemote(remoteUrl) {
-  if (!/^(https:\/\/github\.com\/|git@github\.com:)[\w.-]+\/[\w.-]+(?:\.git)?\/?$/i.test(String(remoteUrl || ''))) {
-    throw new Error('Enter a GitHub repository URL');
-  }
-  return queueGit(async () => {
-    let status = await libraryGitStatus();
-    if (!status.initialized) status = await initializeLibraryGit();
-    status = await ensureLibraryGitMainBranch();
-    if (status.remote) await runGit(['remote', 'set-url', 'origin', remoteUrl]);
-    else await runGit(['remote', 'add', 'origin', remoteUrl]);
-    return libraryGitStatus();
-  });
-}
-
-// When the last successful upload happened. Kept inside .git so it never
-// becomes part of the backup itself.
-const LAST_PUSH_FILE = () => path.join(LIBRARY_DIR, '.git', 'neo-last-push');
-function readLastPush() {
-  try { return fs.readFileSync(LAST_PUSH_FILE(), 'utf8').trim() || null; } catch { return null; }
-}
-function recordLastPush() {
-  try { fs.writeFileSync(LAST_PUSH_FILE(), new Date().toISOString()); } catch (err) { logError('git-last-push', err); }
-}
-
-// A repository GitHub seeded with only its starter files (README, LICENSE,
-// .gitignore) can safely be replaced by the library. Anything else might be
-// real writing from another computer, so NEO never overwrites it.
-const STARTER_FILE = /^(readme|license|licence|copying)(\.[\w.-]+)?$|^\.git(ignore|attributes)$/i;
-const STARTER_MARK = '[starter-files] ';
-
-async function remoteStarterOnly() {
-  try {
-    await runGit(['fetch', '--quiet', 'origin', 'main'], { timeout: GIT_PUSH_TIMEOUT_MS });
-    const sha = (await runGit(['rev-parse', 'FETCH_HEAD'])).stdout;
-    const count = Number((await runGit(['rev-list', '--count', sha])).stdout);
-    const files = (await runGit(['ls-tree', '-r', '--name-only', sha])).stdout.split('\n').filter(Boolean);
-    if (count > 5 || files.some((file) => file.includes('/') || !STARTER_FILE.test(file))) return null;
-    return { sha, files };
-  } catch {
-    return null;
-  }
-}
-
-function explainPushError(err) {
-  const text = String((err && (err.stderr || err.message)) || '');
-  if (/non-fast-forward|fetch first|rejected/i.test(text)) {
-    return 'GitHub has commits this library doesn’t (a README, or another computer backing up here). Use a new, completely empty repository for each computer.';
-  }
-  if (/could not read Username|terminal prompts disabled|Authentication failed|Permission denied|403/i.test(text)) {
-    return 'GitHub needs you to sign in. Set up Git credentials (GitHub Desktop or `gh auth login`), then try again.';
-  }
-  if (/timed out|Could not resolve host|unable to access/i.test(text)) {
-    return 'Could not reach GitHub. NEO will try again after your next version.';
-  }
-  return text.split('\n').filter(Boolean).pop() || 'GitHub push failed';
-}
-
-async function pushNow() {
-  const status = await ensureLibraryGitMainBranch();
-  if (!status.remote) throw new Error('Connect a GitHub repository first');
-  try {
-    await runGit(['push', '--set-upstream', 'origin', 'HEAD'], { timeout: GIT_PUSH_TIMEOUT_MS });
-  } catch (err) {
-    logError('git-push', err);
-    const message = explainPushError(err);
-    if (/non-fast-forward|fetch first|rejected/i.test(String(err.stderr || '')) && await remoteStarterOnly()) {
-      throw new Error(STARTER_MARK + 'This GitHub repository only has the starter files GitHub adds (like a README). Replace them with your library?');
-    }
-    throw new Error(message);
-  }
-  recordLastPush();
-  return libraryGitStatus();
-}
-
-// Replace a starter-only GitHub repository with the library. The lease pins
-// the exact commit we inspected, so anything pushed since then is never lost.
-async function replaceStarterRemote() {
-  await drainBookWrites();
-  return queueGit(async () => {
-    const status = await ensureLibraryGitMainBranch();
-    if (!status.initialized || !status.remote) throw new Error('Connect a GitHub repository first');
-    const starter = await remoteStarterOnly();
-    if (!starter) throw new Error('GitHub has more than starter files now, so NEO won’t replace it. Use a new, empty repository.');
-    await stageLibrary();
-    await commitStaged('NEO backup');
-    try {
-      await runGit(['push', `--force-with-lease=main:${starter.sha}`, '--set-upstream', 'origin', 'HEAD:main'], { timeout: GIT_PUSH_TIMEOUT_MS });
-    } catch (err) {
-      logError('git-replace', err);
-      throw new Error(explainPushError(err));
-    }
-    recordLastPush();
-    return libraryGitStatus();
-  });
-}
-
-// "Back up now": commit whatever is on disk, then push it.
-async function pushLibraryGit() {
-  await drainBookWrites();
-  return queueGit(async () => {
-    const status = await ensureLibraryGitMainBranch();
-    if (!status.initialized) throw new Error('Connect a GitHub repository first');
-    await stageLibrary();
-    await commitStaged('NEO backup');
-    return pushNow();
-  });
-}
-
-// One git operation at a time. Nothing on the book write queue ever waits for
-// this queue, so a slow network can't hold up saving.
-let libraryGitQueue = Promise.resolve();
-function queueGit(work) {
-  const next = libraryGitQueue.catch(() => {}).then(work);
-  libraryGitQueue = next.catch((err) => logError('git-history', err));
-  return next;
-}
-
-function gitPrefs() {
-  return readJSON(LIBRARY_FILE, {}).history?.git || {};
-}
-
-// Pushes are batched: a burst of versions becomes one upload.
-const PUSH_DELAY_MS = 60 * 1000;
-let pushTimer = null;
-let pushPending = false;
-function schedulePush(delay = PUSH_DELAY_MS) {
-  pushPending = true;
-  clearTimeout(pushTimer);
-  pushTimer = setTimeout(() => { pushTimer = null; runPendingPush(); }, delay);
-}
-
-function runPendingPush({ quiet = false } = {}) {
-  clearTimeout(pushTimer);
-  pushTimer = null;
-  if (!pushPending) return Promise.resolve(null);
-  pushPending = false;
-  return queueGit(async () => {
-    const prefs = gitPrefs();
-    if (!prefs.enabled || prefs.autoPush === false) return null;
-    const status = await libraryGitStatus();
-    if (!status.initialized || !status.remote) return null;
-    try {
-      return await pushNow();
-    } catch (err) {
-      if (!quiet) sendToWindow({ type: 'gitAutoPushError', message: err.message });
-      return null;
-    }
-  });
-}
-
-function queueGitCommit(reason, after = Promise.resolve()) {
-  return queueGit(async () => {
-    await Promise.resolve(after).catch(() => {});
-    const prefs = gitPrefs();
-    if (!prefs.enabled) return null;
-    const status = await ensureLibraryGitMainBranch();
-    if (!status.initialized) return null;
-    await stageLibrary();
-    const committed = await commitStaged(`NEO checkpoint: ${reason}`);
-    // Older settings only had `git.enabled`; treat those as automatic backups.
-    if (committed && prefs.autoPush !== false && status.remote) schedulePush();
-    return committed;
-  });
-}
-
-// At launch, upload anything a previous session committed but never pushed.
-function pushLeftovers() {
-  const prefs = gitPrefs();
-  if (!prefs.enabled || prefs.autoPush === false) return;
-  pushPending = true;
-  runPendingPush({ quiet: true });
-}
-
-// On quit: let the final commit land and try one push, but never hold the
-// window hostage for more than a few seconds.
-function settleGit(limitMs = 8000) {
-  const done = libraryGitQueue.then(() => runPendingPush({ quiet: true })).catch(() => {});
-  return Promise.race([done, new Promise((resolve) => setTimeout(resolve, limitMs))]);
-}
-
-const HISTORY_DIR = '.neo-history';
-function historyDir(bookId) {
-  return path.join(bookDir(bookId), HISTORY_DIR);
-}
-
-async function copyCheckpointTree(source, destination, relative = '', files = []) {
-  for (const name of await fs.promises.readdir(source)) {
-    if (name === HISTORY_DIR || name.endsWith('.tmp')) continue;
-    const from = path.join(source, name);
-    const rel = relative ? path.join(relative, name) : name;
-    const to = path.join(destination, rel);
-    const stat = await fs.promises.stat(from);
-    if (stat.isDirectory()) {
-      await fs.promises.mkdir(to, { recursive: true });
-      await copyCheckpointTree(from, destination, rel, files);
-      continue;
-    }
-    const content = await fs.promises.readFile(from);
-    await atomicWriteAsync(to, content);
-    files.push({ path: rel.replace(/\\/g, '/'), sha256: crypto.createHash('sha256').update(content).digest('hex') });
-  }
-  return files;
-}
-
-async function pruneCheckpoints(dir) {
-  const now = Date.now();
-  const seenQuarters = new Set();
-  const seenHours = new Set();
-  const seenDays = new Set();
-  const retentionDays = Math.max(1, Number(readJSON(LIBRARY_FILE, {}).history?.retentionDays) || 90);
-  const snapshots = (await fs.promises.readdir(dir, { withFileTypes: true }))
-    .filter((entry) => entry.isDirectory() && !entry.name.startsWith('.'))
-    .map((entry) => {
-      const full = path.join(dir, entry.name);
-      const manifest = readJSON(path.join(full, 'manifest.json'), null);
-      return { full, created: Date.parse(manifest && manifest.createdAt) || fs.statSync(full).mtimeMs };
-    })
-    .sort((a, b) => b.created - a.created);
-  for (const [index, snapshot] of snapshots.entries()) {
-    const age = now - snapshot.created;
-    const stamp = new Date(snapshot.created);
-    const quarter = Math.floor(snapshot.created / (15 * 60 * 1000));
-    const hour = stamp.toISOString().slice(0, 13);
-    const day = stamp.toISOString().slice(0, 10);
-    const keep = index < 20 ||
-      (age <= 24 * 60 * 60 * 1000 && !seenQuarters.has(quarter)) ||
-      (age <= 30 * 24 * 60 * 60 * 1000 && !seenHours.has(hour)) ||
-      (age <= retentionDays * 24 * 60 * 60 * 1000 && !seenDays.has(day));
-    seenQuarters.add(quarter);
-    seenHours.add(hour);
-    seenDays.add(day);
-    if (!keep) await fs.promises.rm(snapshot.full, { recursive: true, force: true });
-  }
-}
-
-async function createCheckpoint(bookId, reason = 'writing') {
-  const source = bookDir(bookId);
-  if (!fs.existsSync(source)) return null;
-  const dir = historyDir(bookId);
-  await fs.promises.mkdir(dir, { recursive: true });
-  const createdAt = new Date().toISOString();
-  const safeReason = String(reason).replace(/[^a-z0-9-]+/gi, '-').replace(/^-+|-+$/g, '').slice(0, 32) || 'writing';
-  const name = `${createdAt.replace(/[:.]/g, '-')}-${safeReason}-${Math.random().toString(36).slice(2, 7)}`;
-  const pending = path.join(dir, `.${name}.pending`);
-  const target = path.join(dir, name);
-  await fs.promises.mkdir(pending, { recursive: true });
-  try {
-    const files = await copyCheckpointTree(source, pending);
-    await atomicWriteAsync(path.join(pending, 'manifest.json'), JSON.stringify({ version: 1, createdAt, reason: safeReason, files }, null, 2));
-    await fs.promises.rename(pending, target);
-    await pruneCheckpoints(dir);
-    return { id: name, createdAt };
-  } catch (err) {
-    await fs.promises.rm(pending, { recursive: true, force: true });
-    throw err;
-  }
-}
-
-function checkpointPath(bookId, checkpointId) {
-  if (!/^[a-z0-9-]+$/i.test(checkpointId)) throw new Error('Invalid checkpoint id');
-  return path.join(historyDir(bookId), checkpointId);
-}
-
-async function verifyCheckpoint(bookId, checkpointId) {
-  const dir = checkpointPath(bookId, checkpointId);
-  const manifest = readJSON(path.join(dir, 'manifest.json'), null);
-  if (!manifest || !Array.isArray(manifest.files)) return { valid: false, manifest: null };
-  try {
-    for (const file of manifest.files) {
-      const rel = String(file.path || '');
-      if (!rel || rel.includes('..') || path.isAbsolute(rel)) throw new Error('Unsafe checkpoint path');
-      const content = await fs.promises.readFile(path.join(dir, rel));
-      if (crypto.createHash('sha256').update(content).digest('hex') !== file.sha256) throw new Error(`Checksum mismatch: ${rel}`);
-    }
-    return { valid: true, manifest };
-  } catch (err) {
-    return { valid: false, manifest, error: String(err.message || err) };
-  }
-}
-
-async function listCheckpoints(bookId) {
-  const dir = historyDir(bookId);
-  if (!fs.existsSync(dir)) return [];
-  const entries = await fs.promises.readdir(dir, { withFileTypes: true });
-  const list = [];
-  for (const entry of entries) {
-    if (!entry.isDirectory() || entry.name.startsWith('.')) continue;
-    const checked = await verifyCheckpoint(bookId, entry.name);
-    list.push({ id: entry.name, valid: checked.valid, error: checked.error || null, ...(checked.manifest || {}) });
-  }
-  return list.sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt));
-}
-
-async function restoreCheckpoint(bookId, checkpointId) {
-  const checked = await verifyCheckpoint(bookId, checkpointId);
-  if (!checked.valid) throw new Error(`Checkpoint cannot be restored: ${checked.error || 'invalid manifest'}`);
-  await createCheckpoint(bookId, 'before-restore');
-  const target = bookDir(bookId);
-  for (const name of await fs.promises.readdir(target)) {
-    if (name !== HISTORY_DIR) await fs.promises.rm(path.join(target, name), { recursive: true, force: true });
-  }
-  for (const file of checked.manifest.files) {
-    const destination = path.join(target, file.path);
-    await fs.promises.mkdir(path.dirname(destination), { recursive: true });
-    await atomicWriteAsync(destination, await fs.promises.readFile(path.join(checkpointPath(bookId, checkpointId), file.path)));
-  }
-  writeCatalog();
-  return { restored: checkpointId };
-}
+const { createCheckpoint, listCheckpoints, restoreCheckpoint, verifyCheckpoint, checkpointPath, HISTORY_DIR } = require('./main/history')({ bookDir, getLibraryFile: () => LIBRARY_FILE, readJSON, atomicWriteAsync, writeCatalog });
 
 // ---------------------------------------------------------------------------
 // IPC — the renderer's whole view of the disk
@@ -853,15 +354,6 @@ ipcMain.handle('history:restore', async (_e, bookId, checkpointId) => {
   queueGitCommit('restore', restored);
   return restored;
 });
-
-ipcMain.handle('git:status', () => libraryGitStatus());
-ipcMain.handle('git:initialize', (_e, authorName, authorEmail) => queueGit(async () => {
-  await initializeLibraryGit(authorName, authorEmail);
-  return ensureLibraryGitMainBranch();
-}));
-ipcMain.handle('git:connectRemote', (_e, remoteUrl) => connectLibraryGitRemote(remoteUrl));
-ipcMain.handle('git:push', () => pushLibraryGit());
-ipcMain.handle('git:replaceStarter', () => replaceStarterRemote());
 
 ipcMain.handle('book:delete', async (_e, bookId, title) => {
   const win = BrowserWindow.getFocusedWindow();
@@ -1279,12 +771,7 @@ async function importFile(fp) {
     return chapters;
   };
 
-  const CJK_CHAR = /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}]/gu;
-  const countText = (t) => {
-    const cjk = t.match(CJK_CHAR);
-    const rest = t.replace(CJK_CHAR, ' ').trim();
-    return (cjk ? cjk.length : 0) + (rest ? rest.split(/\s+/).length : 0);
-  };
+  const countText = require("./shared/text").countWords;
   const countAllWords = (list) =>
     list.reduce((n, ch) => n + ch.paras.reduce((m, p) => m + (p.text ? countText(p.text) : 0), 0), 0);
 
@@ -1435,21 +922,18 @@ async function quietLibrary() {
 }
 
 function libraryTargetForSelection(selected) {
-  const picked = path.resolve(selected);
-  if (fs.existsSync(path.join(picked, 'library.json'))) return picked;
-  if (path.basename(picked).toLowerCase() === 'neo library') return picked;
-  return path.join(picked, 'NEO Library');
+  return path.resolve(selected);
 }
 
 async function switchLibraryTo(target) {
   const settings = readSettings();
-  const defaultDir = path.join(app.getPath('documents'), 'NEO Library');
+  const defaultDir = defaultLibraryPath(app.getPath('documents'));
   if (samePath(target, defaultDir) || path.resolve(target) === path.resolve(defaultDir)) delete settings.libraryDir;
   else settings.libraryDir = target;
   delete settings.libraryPath;
   writeSettings(settings);
   setLibraryPath(target);
-  try { initSpell(); } catch (err) { logError('spell', err); } // the new library's language and words
+  try { spelling.reset(); } catch (err) { logError('spell', err); } // the new library's language and words
   for (const w of BrowserWindow.getAllWindows()) w.reload();
 }
 
@@ -1457,7 +941,7 @@ async function switchLibraryTo(target) {
 // NEO copies the library to the new place and leaves the original intact).
 async function chooseLibraryFolder() {
   const win = BrowserWindow.getFocusedWindow() || BrowserWindow.getAllWindows()[0];
-  const defaultDir = path.join(app.getPath('documents'), 'NEO Library');
+  const defaultDir = defaultLibraryPath(app.getPath('documents'));
   const custom = path.resolve(LIBRARY_DIR) !== path.resolve(defaultDir);
   const ask = await dialog.showMessageBox(win, {
     type: 'question',
@@ -1476,7 +960,7 @@ async function changeLibraryLocation(chosenTarget = null) {
   let picked = chosenTarget;
   if (!picked) {
     const { canceled, filePaths } = await dialog.showOpenDialog(win, {
-      title: 'Choose where NEO keeps your library',
+      title: 'Choose the exact library folder (empty or an existing NEO library)',
       defaultPath: path.dirname(LIBRARY_DIR),
       properties: ['openDirectory', 'createDirectory']
     });
@@ -1534,7 +1018,7 @@ async function changeLibraryLocation(chosenTarget = null) {
     if (targetExists && fs.readdirSync(target).length > 0) {
       await dialog.showMessageBox(win, {
         type: 'error',
-        message: 'There’s already a folder called NEO Library here, and it isn’t empty.',
+        message: 'The selected folder is not empty and does not contain a NEO library.',
         detail: 'Choose another place, or a folder that already holds a NEO library.'
       });
       return;
@@ -1574,87 +1058,6 @@ async function changeLibraryLocation(chosenTarget = null) {
 // checked, and only then swapped in. Whatever was here before is renamed,
 // never deleted.
 // ---------------------------------------------------------------------------
-
-const GIT_CLONE_TIMEOUT_MS = 10 * 60 * 1000;
-
-function hasBooks(dir) {
-  try { return fs.readdirSync(dir).some((name) => name.startsWith('book-')); } catch { return false; }
-}
-
-async function restoreLibraryFromGit(remoteUrl) {
-  if (!/^(https:\/\/github\.com\/|git@github\.com:)[\w.-]+\/[\w.-]+(?:\.git)?\/?$/i.test(String(remoteUrl || ''))) {
-    throw new Error('Enter a GitHub repository URL');
-  }
-  if (!(await libraryGitStatus()).available) throw new Error('Git is not installed');
-  const parent = path.dirname(LIBRARY_DIR);
-  const stamp = new Date().toISOString().replace(/[:.]/g, '-');
-  const incoming = path.join(parent, `.neo-restore-${stamp}`);
-  try {
-    try {
-      await runGit(['clone', '--quiet', '--branch', 'main', remoteUrl, incoming], { cwd: parent, timeout: GIT_CLONE_TIMEOUT_MS });
-    } catch (err) {
-      logError('git-restore-clone', err);
-      if (/Remote branch main not found|not found in upstream/i.test(String(err.stderr))) {
-        throw new Error('That repository has no NEO backup on its main branch.');
-      }
-      if (/could not read Username|terminal prompts disabled|Authentication failed|not found|403/i.test(String(err.stderr))) {
-        throw new Error('NEO couldn’t download that repository. Check the address, and that this computer is signed in to GitHub (GitHub Desktop or `gh auth login`).');
-      }
-      throw new Error(explainPushError(err));
-    }
-    const backup = readJSON(path.join(incoming, LIBRARY_BACKUP_FILE), null) || readJSON(path.join(incoming, 'library.json'), null);
-    if (!backup || !Array.isArray(backup.shelves)) {
-      throw new Error('That repository doesn’t look like a NEO Library backup.');
-    }
-    // This computer's private settings (email) stay; the backup brings
-    // shelves, authors and preferences. Backups resume automatically.
-    const local = readJSON(LIBRARY_FILE, {}) || {};
-    const restored = { ...backup };
-    for (const key of PRIVATE_LIBRARY_KEYS) if (local[key] !== undefined) restored[key] = local[key];
-    restored.history = { ...(backup.history || {}) };
-    restored.history.git = { ...(restored.history.git || {}), enabled: true, autoPush: true, remoteUrl };
-    writeJSON(path.join(incoming, 'library.json'), restored);
-
-    // Swap in. Whatever was here is kept beside it, renamed.
-    let keptAs = null;
-    if (fs.existsSync(LIBRARY_DIR)) {
-      keptAs = path.join(parent, `${path.basename(LIBRARY_DIR)} (before restore ${stamp.slice(0, 10)})`);
-      let n = 2;
-      while (fs.existsSync(keptAs)) keptAs = keptAs.replace(/( \d+)?\)$/, ` ${n++})`);
-      try {
-        await fs.promises.rename(LIBRARY_DIR, keptAs);
-      } catch (err) {
-        logError('git-restore-swap', err);
-        throw new Error('NEO couldn’t set your current library aside (a file in it may be open in another app). Nothing was changed.');
-      }
-    }
-    try {
-      await fs.promises.rename(incoming, LIBRARY_DIR);
-    } catch (err) {
-      logError('git-restore-swap', err);
-      if (keptAs) await fs.promises.rename(keptAs, LIBRARY_DIR).catch((e) => logError('git-restore-undo', e));
-      throw new Error('NEO couldn’t move the restored library into place. Your library is as it was.');
-    }
-    // A brand-new computer's empty starter library isn't worth keeping.
-    if (keptAs && !hasBooks(keptAs)) {
-      await fs.promises.rm(keptAs, { recursive: true, force: true }).catch(() => {});
-      keptAs = null;
-    }
-    try { recordLastPush(); } catch { /* cosmetic */ }
-    writeCatalog();
-    return { keptAs, books: fs.readdirSync(LIBRARY_DIR).filter((n) => n.startsWith('book-')).length };
-  } finally {
-    await fs.promises.rm(incoming, { recursive: true, force: true }).catch(() => {});
-  }
-}
-
-ipcMain.handle('git:restore', async (_e, remoteUrl) => {
-  await quietLibrary();
-  const result = await queueGit(() => restoreLibraryFromGit(remoteUrl));
-  // reload after the reply lands, so the renderer can show what happened
-  setTimeout(() => { for (const w of BrowserWindow.getAllWindows()) w.reload(); }, 3500);
-  return result;
-});
 
 // ---------------------------------------------------------------------------
 // Window
@@ -1728,95 +1131,10 @@ ipcMain.on('save:flushComplete', (event) => {
 // lives in library.json so it travels with the writer's books.
 // (Languages beyond US English: idea and dictionary set from Zaim Halili.)
 // ---------------------------------------------------------------------------
-let spellLanguage = 'en-US';
-const SPELL_LANGUAGES = {
-  'en-US': { label: 'English (US)', pkg: 'dictionary-en-us' },
-  'en-GB': { label: 'English (UK)', pkg: 'dictionary-en-gb' },
-  'en-CA': { label: 'English (Canada)', pkg: 'dictionary-en-ca' },
-  'en-AU': { label: 'English (Australia)', pkg: 'dictionary-en-au' },
-  'fr': { label: 'French', pkg: 'dictionary-fr' },
-  'es': { label: 'Spanish', pkg: 'dictionary-es' },
-  'de': { label: 'German', pkg: 'dictionary-de' }
-};
-
-// The dictionary work runs in a helper process (spell-worker.js): parsing
-// French takes seconds, and the writing room must never wait for it.
-let spellChild = null;
-let spellSeq = 0;
-const spellWaiting = new Map();
-
-function spellRequest(msg) {
-  return new Promise((resolve) => {
-    if (!spellChild) { resolve({ ok: false, error: 'no spell process' }); return; }
-    const id = ++spellSeq;
-    spellWaiting.set(id, resolve);
-    spellChild.postMessage({ ...msg, id });
-  });
-}
-
-function startSpellProcess() {
-  if (spellChild) return;
-  try {
-    spellChild = utilityProcess.fork(path.join(__dirname, 'spell-worker.js'), [], { serviceName: 'NEO spellcheck' });
-    spellChild.on('message', (m) => {
-      const done = spellWaiting.get(m.id);
-      if (done) { spellWaiting.delete(m.id); done(m); }
-    });
-    spellChild.on('exit', () => {
-      spellChild = null;
-      for (const done of spellWaiting.values()) done({ ok: false, error: 'spell process exited' });
-      spellWaiting.clear();
-    });
-  } catch (err) {
-    logError('spell', err);
-    spellChild = null;
-  }
-}
-
-// The dictionary packages differ in how they export (callback, ES module),
-// so the helper reads their .aff/.dic files directly — the one shape they
-// all share. (Not require.resolve: the newer packages seal package.json.)
-async function loadSpellDictionary(code) {
-  const known = SPELL_LANGUAGES[code] ? code : 'en-US';
-  const entry = SPELL_LANGUAGES[known];
-  startSpellProcess();
-  let custom = [];
-  try { custom = readJSON(LIBRARY_FILE, {}).customWords || []; } catch { /* a nicety */ }
-  const res = await spellRequest({ type: 'load', dir: path.join(__dirname, 'node_modules', entry.pkg), custom });
-  if (!res.ok) { logError('spell', new Error(res.error || 'dictionary failed to load')); return false; }
-  spellLanguage = known;
-  return true;
-}
-
-function initSpell() {
-  let code = 'en-US';
-  try { code = readJSON(LIBRARY_FILE, {}).spellLanguage || 'en-US'; } catch { /* fresh library */ }
-  loadSpellDictionary(code);
-}
-
-ipcMain.handle('spell:setLanguage', async (_e, code) => {
-  if (!SPELL_LANGUAGES[code]) return false;
-  const ok = await loadSpellDictionary(code);
-  if (ok) { try { buildMenu(); } catch (err) { logError('menu', err); } }
-  return ok;
-});
-
-ipcMain.handle('spell:check', async (_e, words) => {
-  const res = await spellRequest({ type: 'check', words });
-  if (res.ok) return res.result;
-  const out = {};
-  for (const w of words) out[w] = true; // no checker: nothing is wrong
-  return out;
-});
-
-ipcMain.handle('spell:suggest', async (_e, word) => {
-  const res = await spellRequest({ type: 'suggest', word });
-  return res.ok ? res.result : [];
-});
-
-ipcMain.handle('spell:learn', async (_e, word) => {
-  if (typeof word === 'string') await spellRequest({ type: 'add', word });
-  return true;
+const SPELL_LANGUAGES = require('./shared/language-data').dictionaries;
+const spelling = require('./plugins/spellcheck/main')({ utilityProcess, ipcMain,
+  preferences: () => readJSON(LIBRARY_FILE, {}), logError,
+  menuChanged: () => buildMenu()
 });
 
 // ---------------------------------------------------------------------------
@@ -1925,7 +1243,7 @@ function buildMenu() {
           submenu: Object.entries(SPELL_LANGUAGES).map(([code, lang]) => ({
             label: lang.label,
             type: 'radio',
-            checked: spellLanguage === code,
+            checked: spelling.language === code,
             click: () => sendToWindow({ type: 'spellLanguage', value: code })
           }))
         }
@@ -2043,53 +1361,6 @@ function buildMenu() {
   Menu.setApplicationMenu(Menu.buildFromTemplate(template));
 }
 
-// Manual update check (Help → Check for Update…): a direct GitHub Releases
-// lookup, separate from the silent auto-updater. Works in dev builds too.
-let lastReleaseUrl = null;
-
-function compareVersions(a, b) {
-  const pa = a.split('.').map(Number);
-  const pb = b.split('.').map(Number);
-  for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
-    const na = pa[i] || 0, nb = pb[i] || 0;
-    if (na !== nb) return na - nb;
-  }
-  return 0;
-}
-
-// toggling at the session level forces the engine to re-scan visible text —
-// newer Chromium ignores attribute changes on text it has already looked at
-ipcMain.handle('app:version', () => app.getVersion());
-
-ipcMain.handle('update:check', async () => {
-  try {
-    const res = await fetch('https://api.github.com/repos/hughhowey/neo/releases/latest', {
-      headers: { 'User-Agent': 'NEO-App' }
-    });
-    if (!res.ok) throw new Error('GitHub API returned ' + res.status);
-    const data = await res.json();
-    const latestVersion = String(data.tag_name || '').replace(/^v/, '');
-    const currentVersion = app.getVersion();
-    lastReleaseUrl = data.html_url || null;
-    return {
-      hasUpdate: !!latestVersion && compareVersions(latestVersion, currentVersion) > 0,
-      latestVersion,
-      currentVersion
-    };
-  } catch (err) {
-    logError('update', err);
-    return { error: true };
-  }
-});
-
-// the renderer may only open the release page fetched above — never arbitrary URLs
-ipcMain.handle('update:openRelease', () => {
-  if (lastReleaseUrl && /^https:\/\/github\.com\//.test(lastReleaseUrl)) {
-    require('electron').shell.openExternal(lastReleaseUrl);
-  }
-  return true;
-});
-
 // Two copies of NEO editing the same library is how words get eaten
 if (!app.requestSingleInstanceLock()) {
   app.quit();
@@ -2103,20 +1374,7 @@ if (!app.requestSingleInstanceLock()) {
   });
 }
 
-// Auto-update from GitHub releases. Deliberately defensive: any failure is
-// logged and swallowed, so an unsigned build or offline machine never notices.
-// (macOS auto-update only works once the app is code-signed.)
-function checkForUpdates() {
-  if (!app.isPackaged) return;
-  try {
-    const { autoUpdater } = require('electron-updater');
-    autoUpdater.logger = null;
-    autoUpdater.on('error', (err) => logError('updater', err));
-    autoUpdater.checkForUpdatesAndNotify().catch((err) => logError('updater', err));
-  } catch (err) {
-    logError('updater', err);
-  }
-}
+const { checkForUpdates } = require('./main/updates')({ app, ipcMain, logError });
 
 app.whenReady().then(() => {
   // Packaged builds get name/icon from electron-builder; this covers `npm start`.
@@ -2162,7 +1420,7 @@ app.whenReady().then(() => {
 
     try { ensureLibrary(); } catch (err) { logError('library', err); }
     createWindow();
-    try { initSpell(); } catch (err) { logError('spell', err); }
+    try { spelling.reset(); } catch (err) { logError('spell', err); }
     try { buildMenu(); } catch (err) { logError('menu', err); }
     if (unavailableLibrary) {
       dialog.showMessageBox({

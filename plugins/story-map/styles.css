@@ -1,0 +1,28 @@
+.story-map-summary {
+  margin: 0 0 26px; padding: 16px 18px; border: 1px solid color-mix(in srgb, var(--accent) 42%, var(--line));
+  border-radius: 8px; color: var(--paper-muted); font-size: 12px; line-height: 1.45;
+  background: color-mix(in srgb, var(--paper) 95%, var(--accent));
+}
+.story-map-head { display: flex; justify-content: space-between; gap: 16px; align-items: baseline; margin-bottom: 14px; }
+.story-map-head strong { color: var(--paper-muted); font: 500 13px -apple-system, BlinkMacSystemFont, "Helvetica Neue", sans-serif; letter-spacing: 1.2px; text-transform: uppercase; }
+.story-map-head strong + span { margin-left: 10px; }
+.story-map-help { color: var(--paper-faint); font-size: 11px; }
+.story-map-board { display: flex; flex-direction: column; gap: 14px; }
+.story-map-lane { border-top: 1px solid color-mix(in srgb, var(--paper-muted) 26%, transparent); padding-top: 10px; }
+.story-map-lane-head { display: flex; justify-content: space-between; color: var(--paper-muted); font-size: 11px; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 8px; }
+.story-map-lane-head span { color: var(--paper-faint); font-size: 10px; letter-spacing: 0; text-transform: none; }
+.story-map-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 8px; }
+.story-map-card { border: 1px solid color-mix(in srgb, var(--paper-muted) 30%, transparent); border-radius: 6px; padding: 10px; background: color-mix(in srgb, var(--paper) 91%, var(--accent)); transition: border-color .15s, box-shadow .15s; }
+.story-map-card.saved { border-color: var(--accent); box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 35%, transparent); }
+.story-map-card-head { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; margin-bottom: 8px; }
+.story-map-open { border: 0; background: none; color: var(--paper-muted); font: 600 14px Georgia, serif; padding: 0; text-align: left; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.story-map-open:hover { color: var(--accent); }
+.story-map-card-head > span, .story-map-card-foot { color: var(--paper-faint); font-size: 10px; white-space: nowrap; }
+.story-map-fields { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+.story-map-fields label { color: var(--paper-faint); font-size: 10px; margin: 0; }
+.story-map-fields input, .story-map-fields select { display: block; width: 100%; margin-top: 3px; padding: 4px 5px; background: color-mix(in srgb, var(--paper) 88%, var(--ink)); border: 1px solid color-mix(in srgb, var(--paper-muted) 30%, transparent); border-radius: 4px; color: var(--paper-muted); font: 11px -apple-system, BlinkMacSystemFont, "Helvetica Neue", sans-serif; }
+.story-map-fields input:focus, .story-map-fields select:focus { outline: none; border-color: var(--accent); }
+.story-map-card-foot { display: flex; justify-content: space-between; gap: 8px; overflow: hidden; margin-top: 8px; }
+.story-map-card-foot span:last-child { overflow: hidden; text-overflow: ellipsis; }
+.story-map-empty { color: var(--paper-faint); font-style: italic; margin: 0; }
+@media (max-width: 600px) { .story-map-head { align-items: flex-start; flex-direction: column; gap: 4px; } .story-map-cards { grid-template-columns: 1fr; } }

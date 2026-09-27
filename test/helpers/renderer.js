@@ -48,6 +48,7 @@ async function openNeo({ init = '', lib = {}, chapters = null } = {}) {
     const text = chapters || { c1: CH1, c2: CH2 };
     const clone = (v) => JSON.parse(JSON.stringify(v));
     const api = {
+      logError: async (message) => { console.error(message); calls.push(["logError", message]); },
       readLibrary: async () => clone(library),
       writeLibrary: async (d) => { calls.push(['writeLibrary', clone(d)]); return true; },
       readBookMeta: async () => clone(book),

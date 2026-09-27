@@ -1,0 +1,15 @@
+/* Note Cards plugin */
+#cards-list { font-family: -apple-system, BlinkMacSystemFont, "Helvetica Neue", sans-serif; }
+.add-card { background: var(--accent); border: 0; border-radius: 5px; color: var(--ink); padding: 7px 12px; font-size: 12px; margin-bottom: 18px; }
+.cards-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 14px; }
+.note-card { position: relative; min-height: 195px; display: flex; flex-direction: column; padding: 15px; background: color-mix(in srgb, var(--paper) 94%, var(--accent)); border: 1px solid color-mix(in srgb, var(--paper-muted) 30%, transparent); border-top: 3px solid var(--accent); box-shadow: 0 3px 10px rgba(52, 45, 29, 0.08); }
+.note-card-title { font: 700 18px Georgia, serif; color: var(--ink); outline: none; padding: 0 26px 7px 0; }
+.note-card-title:empty::before { content: attr(data-ph); color: var(--paper-faint); font-weight: 400; font-style: italic; }
+.note-card-body { flex: 1; color: var(--paper-muted); font: 14px/1.45 Georgia, serif; outline: none; white-space: pre-wrap; }
+.note-card-body:empty::before { content: attr(data-ph); color: var(--paper-faint); font-style: italic; }
+.note-card-remove { align-self: flex-end; border: 0; background: none; color: var(--paper-muted); font-size: 11px; margin-top: 10px; }
+.note-card-remove:hover { color: var(--danger-muted); }
+.card-drag { position: absolute; top: 14px; right: 13px; border: 0; padding: 0; background: none; color: var(--paper-muted); cursor: grab; font-size: 16px; line-height: 1; }
+.note-card.dragging { opacity: 0.42; }
+.note-card.drop-before { box-shadow: -4px 0 0 var(--accent), 0 3px 10px rgba(52, 45, 29, 0.08); }
+.cards-empty { padding: 55px 0; text-align: center; color: var(--paper-faint); font: italic 14px Georgia, serif; }
