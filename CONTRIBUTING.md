@@ -30,3 +30,13 @@ Books are folders of plain files in `~/Documents/NEO Library`: `book.json` for m
 - Keep PRs focused — one feature or fix each.
 - Describe the writer-facing behavior in your PR, not just the code. Think like an author, not a programmer!
 - Bug reports: please include your OS, what you did, what happened, and the tail of `~/Documents/NEO Library/neo-errors.log` if it's a crash.
+
+## Tests
+
+`npm test` runs everything; `npm run test:main` and `npm run test:ui` run each half.
+
+- `test/main/` loads `main.js` outside Electron with a stand-in `electron` module and a throwaway home folder. Git is pointed at a local bare repository instead of GitHub, so backup, restore and "someone else pushed first" can be tested without a network account.
+- `test/renderer/` loads `index.html` in headless Chromium with an in-memory `window.neo`, and drives it like a writer: menu messages, clicks, typing. Run `npx playwright install chromium` once first; without it these tests skip.
+
+GitHub runs both on every push and pull request (`.github/workflows/test.yml`). A change that alters what's saved, backed up or exported should come with a test.
+
