@@ -21,7 +21,7 @@ on:
     branches: [main]
     paths:
       - 'pocket/**'
-      - 'app.js'
+      - 'renderer/**'
       - 'covers.js'
       - 'styles.css'
       - '.github/workflows/pocket.yml'
@@ -64,7 +64,7 @@ jobs:
         run: |
           cd pocket
           npm install
-          cp ../app.js www/app.js
+          rm -rf www/renderer && cp -r ../renderer www/renderer
           cp ../covers.js www/covers.js
           cp ../styles.css www/styles.css
           npx cap sync android

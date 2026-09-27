@@ -1,7 +1,7 @@
 # NEO Pocket
 
 The Android companion to NEO: open a WIP, write, close. The manuscript editor
-is desktop NEO's own code (`app.js` / `styles.css`, copied in at build time),
+is desktop NEO's own code (`renderer/` / `styles.css`, copied in at build time),
 running in a Capacitor shell with a phone-sized implementation of the
 `window.neo` bridge (`www/pocket-bridge.js`). Files live in
 `/storage/emulated/0/Documents/NEO Library`, shared with the desktop via
@@ -9,7 +9,7 @@ Syncthing — same plain files, no cloud, no accounts.
 
 ## Building
 
-Robots build it. Every push to `main` that touches `pocket/`, `app.js`, or
+Robots build it. Every push to `main` that touches `pocket/`, `renderer/`, or
 `styles.css` produces a fresh, signed APK and drops it on the rolling
 **pocket-latest** pre-release:
 
@@ -28,7 +28,7 @@ First install only: sideload, then grant **All files access**
 (Settings → Apps → NEO Pocket).
 
 Local builds need Android Studio and: `cd pocket && npm install`, copy
-`../app.js`, `../covers.js` and `../styles.css` into `www/`, `npx cap sync android`, then
+`../renderer/`, `../covers.js` and `../styles.css` into `www/`, `npx cap sync android`, then
 build from `android/`. Local builds are debug-signed and won't install over a
 robot build (or vice versa).
 

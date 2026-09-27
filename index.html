@@ -148,6 +148,34 @@
   <div id="hint" hidden></div>
 
   <script src="covers.js"></script>
-  <script src="app.js"></script>
+  <!-- The renderer, in load order (classic scripts sharing one scope). -->
+  <script src="renderer/00-core.js"></script>
+  <script src="renderer/01-bookshelf.js"></script>
+  <script src="renderer/02-plugins.js"></script>
+  <script src="renderer/03-editor-render.js"></script>
+  <script src="renderer/04-editor-typing.js"></script>
+  <script src="renderer/05-poetry.js"></script>
+  <script src="renderer/06-placeholders.js"></script>
+  <script src="renderer/07-nav-pane.js"></script>
+  <script src="renderer/08-tabs.js"></script>
+  <script src="renderer/09-outline.js"></script>
+  <script src="renderer/10-counters.js"></script>
+  <script src="renderer/11-saving.js"></script>
+  <script src="renderer/12-undo.js"></script>
+  <script src="renderer/13-library-search.js"></script>
+  <script src="renderer/14-find-replace.js"></script>
+  <script src="renderer/15-import.js"></script>
+  <script src="renderer/16-spellcheck-view.js"></script>
+  <script src="renderer/17-revision-pass.js"></script>
+  <script src="renderer/18-read-aloud.js"></script>
+  <script src="renderer/19-goals-settings.js"></script>
+  <script src="renderer/20-cover-art.js"></script>
+  <script src="renderer/21-sync-settings.js"></script>
+  <script src="renderer/22-version-history.js"></script>
+  <script src="renderer/23-help-fonts.js"></script>
+  <script src="renderer/24-export.js"></script>
+  <script src="renderer/25-publishing.js"></script>
+  <script src="renderer/26-menu.js"></script>
+  <script src="renderer/27-startup.js"></script>
 </body>
 </html>

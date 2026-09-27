@@ -104,7 +104,7 @@ restart the app automatically.
 
 To build installers: `npm install electron-builder --save-dev`, then `npm run package` (macOS), `npm run package:win` (Windows), or `npm run package:all`. Output lands in `dist/`.
 
-The app is very simple: an Electron shell (`main.js`), a preload bridge (`preload.js`), and a renderer (`app.js` + `styles.css` + `index.html`). If you know JavaScript, you can change NEO. Have at it.
+The app is very simple: an Electron shell (`main.js`), a preload bridge (`preload.js`), and a renderer (`renderer/*.js` + `styles.css` + `index.html`). The renderer is split by concern (bookshelf, editor, outline, export…) into plain scripts that load in order, so each feature lives in a file you can find. If you know JavaScript, you can change NEO. Have at it.
 
 ## Roadmap (things I'm dreaming up but may never get to):
 
