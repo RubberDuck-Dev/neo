@@ -178,6 +178,7 @@
   <script src="renderer/17-revision-pass.js"></script>
   <script src="renderer/18-read-aloud.js"></script>
   <script src="renderer/features/preferences.js"></script>
+  <script src="renderer/features/focus.js"></script>
   <script src="renderer/19-goals-settings.js"></script>
   <script src="renderer/20-cover-art.js"></script>
   <script src="renderer/21-sync-settings.js"></script>
@@ -234,8 +235,9 @@
       const k = e.code;
       const go = (msg) => { e.preventDefault(); window.pocketMenu && window.pocketMenu(msg); };
       if (e.shiftKey && k === 'Semicolon') go({ type: 'revisionPass' });
-      else if (e.shiftKey && k === 'KeyR') go({ type: 'readAloud' });
-      else if (e.shiftKey && k === 'KeyU') go({ type: 'focusMode' });
+      else if (e.altKey && k === 'KeyR') go({ type: 'readAloud' });
+      else if (e.shiftKey && ['KeyL', 'KeyC', 'KeyR', 'KeyJ'].includes(k)) go({type: 'align', value: {KeyL:'left',KeyC:'center',KeyR:'right',KeyJ:'justify'}[k]});
+      else if (e.shiftKey && k === 'KeyO') go({ type: 'focusCycle' });
       else if (e.shiftKey && k === 'KeyT') go({ type: 'typewriter' });
       else if (!e.shiftKey && k === 'Semicolon') go({ type: 'spellcheck' });
       else if (!e.shiftKey && k === 'KeyF') go({ type: 'find' });

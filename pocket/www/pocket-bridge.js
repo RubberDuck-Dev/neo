@@ -1,30 +1,74 @@
 /* =========================== NEO POCKET =========================== */
-/* The window.neo doorway, implemented for Android. Reads and writes    */
-/* the same plain files as desktop NEO, in Documents/NEO Library —      */
-/* shared with the Mac via Syncthing. Desktop-only powers (export,      */
-/* email, spellcheck, import) stub out quietly; writing never does.     */
+/* The window.neo doorway, implemented for Android and iOS. Reads and    */
+/* writes the same plain files as desktop NEO, in a NEO Library folder:  */
+/* Android: Documents/NEO Library, shared with the Mac via Syncthing.    */
+/* iOS: the app's own folder — inside iCloud Drive when the writer has  */
+/* it on (so desktop NEO can point at the same folder), else On My iPad. */
+/* Desktop-only powers (export, email, spellcheck, import) stub out      */
+/* quietly; writing never does.                                          */
 
 (function () {
   const FS = () => window.Capacitor.Plugins.Filesystem;
   const DIR = 'DOCUMENTS';
   const ROOT = 'NEO Library';
+  const isIOS = () => !!(window.Capacitor && window.Capacitor.getPlatform && window.Capacitor.getPlatform() === 'ios');
 
-  const p = (...parts) => [ROOT, ...parts].join('/');
+  // iOS: HOME is the library folder as a file:// URL, found by the little
+  // LibraryHome plugin (ios/App/App/LibraryHome.swift); CLOUD says whether
+  // that folder lives in iCloud Drive. Android leaves both alone.
+  let HOME = null;
+  let CLOUD = false;
+  const libraryHome = () => (window.Capacitor.registerPlugin ? window.Capacitor.registerPlugin('LibraryHome') : window.Capacitor.Plugins.LibraryHome);
+  const ready = (async () => {
+    if (!isIOS()) return;
+    try {
+      const r = await libraryHome().locate();
+      HOME = String(r.path).replace(/\/+$/, '');
+      CLOUD = !!r.cloud;
+      if (CLOUD) await libraryHome().fetch({ wait: 8000 });
+    } catch (err) {
+      showErrorDetail('Could not find the library folder: ' + (err && err.message || err) +
+        '\nplugins the page can see: ' + Object.keys((window.Capacitor && window.Capacitor.Plugins) || {}).join(', '));
+    }
+  })();
+
+  // library-relative path -> the Filesystem plugin's idea of where that is
+  const p = (...parts) => parts.join('/');
+  function at(rel) {
+    if (HOME) return { path: rel ? HOME + '/' + rel.split('/').map(encodeURIComponent).join('/') : HOME };
+    return { path: rel ? ROOT + '/' + rel : ROOT, directory: DIR };
+  }
+
+  // iCloud delivers other devices' files as placeholders until asked;
+  // ask before reading anything a Mac might have written.
+  async function fetchCloud(rel, wait) {
+    if (!CLOUD) return;
+    try { await libraryHome().fetch({ path: at(rel).path, wait: wait || 8000 }); } catch { /* read anyway */ }
+  }
+
+  async function listDir(rel) {
+    await ready;
+    const ls = await FS().readdir(at(rel));
+    return (ls.files || []).map((f) => (f && f.name) || f).filter((n) => !String(n).endsWith('.icloud'));
+  }
 
   async function ensureDir(path) {
+    await ready;
     try {
-      await FS().mkdir({ path, directory: DIR, recursive: true });
+      await FS().mkdir({ ...at(path), recursive: true });
     } catch { /* exists */ }
   }
 
   async function readText(path) {
-    const r = await FS().readFile({ path, directory: DIR, encoding: 'utf8' });
+    await ready;
+    const r = await FS().readFile({ ...at(path), encoding: 'utf8' });
     return r.data;
   }
 
   async function writeText(path, data) {
+    await ready;
     try {
-      await FS().writeFile({ path, directory: DIR, data, encoding: 'utf8', recursive: true });
+      await FS().writeFile({ ...at(path), data, encoding: 'utf8', recursive: true });
     } catch (err) {
       showErrorDetail('Could not save ' + path + ': ' + (err && err.message || err));
       throw err;
@@ -38,9 +82,11 @@
     const bd = document.createElement('div');
     bd.style.cssText = 'position:fixed;inset:0;background:#191919;color:#d6d2c6;z-index:9999;' +
       'display:flex;align-items:center;justify-content:center;padding:40px;text-align:center';
-    bd.innerHTML = '<div style="max-width:420px"><h2 style="letter-spacing:5px">NEO POCKET</h2>' +
-      '<p style="line-height:1.6;margin-top:16px">Pocket can see the NEO Library folder but Android is blocking it from reading files that other apps (like Syncthing) created.</p>' +
-      '<p style="line-height:1.6;color:#999;margin-top:12px">The switch is not on the app\'s own Permissions page. Open Android Settings, search for <b>All files access</b> (or Apps → Special app access → All files access), turn it on for NEO Pocket, then come back here.</p>' +
+    const why = isIOS()
+      ? '<p style="line-height:1.6;margin-top:16px">Pocket couldn\'t open its NEO Library folder. Force-quit and reopen the app; if it keeps happening, check that iCloud Drive is signed in (Settings → your name → iCloud), or turn it off so Pocket keeps books on the iPad itself.</p>'
+      : '<p style="line-height:1.6;margin-top:16px">Pocket can see the NEO Library folder but Android is blocking it from reading files that other apps (like Syncthing) created.</p>' +
+        '<p style="line-height:1.6;color:#999;margin-top:12px">The switch is not on the app\'s own Permissions page. Open Android Settings, search for <b>All files access</b> (or Apps → Special app access → All files access), turn it on for NEO Pocket, then come back here.</p>';
+    bd.innerHTML = '<div style="max-width:420px"><h2 style="letter-spacing:5px">NEO POCKET</h2>' + why +
       '<p style="font:12px/1.5 monospace;color:#777;margin-top:20px;word-break:break-word">' + String(err && err.message || err || '') + '</p></div>';
     document.body.appendChild(bd);
   }
@@ -78,17 +124,14 @@
   // how a too-gentle test lies about a half-broken setup.
   async function checkAccess() {
     try {
-      await ensureDir(ROOT);
+      await ensureDir('');
       let names = [];
-      try {
-        const ls = await FS().readdir({ path: ROOT, directory: DIR });
-        names = (ls.files || []).map((f) => (f && f.name) || f);
-      } catch { /* fall through to the write test */ }
+      try { names = await listDir(''); } catch { /* fall through to the write test */ }
       if (names.includes('library.json')) {
         await readText(p('library.json')); // the file that matters, whoever made it
       } else {
-        await FS().writeFile({ path: p('.pocket-touch'), directory: DIR, data: String(Date.now()), encoding: 'utf8', recursive: true });
-        try { await FS().deleteFile({ path: p('.pocket-touch'), directory: DIR }); } catch { /* fine */ }
+        await FS().writeFile({ ...at('.pocket-touch'), data: String(Date.now()), encoding: 'utf8', recursive: true });
+        try { await FS().deleteFile(at('.pocket-touch')); } catch { /* fine */ }
       }
       return true;
     } catch (err) {
@@ -114,13 +157,26 @@
     libraryPath: async () => {
       // a served URL lets cover art render in the webview
       try {
+        await ready;
+        if (HOME) return window.Capacitor.convertFileSrc(HOME);
         const u = await FS().getUri({ path: ROOT, directory: DIR });
         return window.Capacitor.convertFileSrc(u.uri);
       } catch { return 'Documents/NEO Library'; }
     },
 
     /* ---------- books ---------- */
-    readBookMeta: (bookId) => readJSONFile(p(bookId, 'book.json'), null),
+    readBookMeta: async (bookId) => { await fetchCloud(bookId); return readJSONFile(p(bookId, 'book.json'), null); },
+    listBooks: async () => {
+      const out = [];
+      try {
+        for (const name of await listDir('')) {
+          if (!String(name).startsWith('book-')) continue;
+          const m = await readJSONFile(p(name, 'book.json'), null);
+          if (m && m.id) out.push({ id: m.id, title: m.title || 'Untitled', author: m.author || '', modified: m.modified || '' });
+        }
+      } catch { /* an empty list is honest enough */ }
+      return out;
+    },
     writeBookMeta: async (bookId, meta) => {
       meta.modified = new Date().toISOString();
       await writeJSONFile(p(bookId, 'book.json'), meta);
@@ -152,6 +208,7 @@
 
     /* ---------- chapters ---------- */
     readChapter: async (bookId, chId) => {
+      await fetchCloud(p(bookId, 'chapters', chId + '.html'));
       try { return await readText(p(bookId, 'chapters', chId + '.html')); } catch { return ''; }
     },
     writeChapter: async (bookId, chId, html) => {
@@ -160,7 +217,7 @@
       return true;
     },
     deleteChapter: async (bookId, chId) => {
-      try { await FS().deleteFile({ path: p(bookId, 'chapters', chId + '.html'), directory: DIR }); } catch { /* fine */ }
+      try { await FS().deleteFile(at(p(bookId, 'chapters', chId + '.html'))); } catch { /* fine */ }
       return true;
     },
 
@@ -180,7 +237,8 @@
     /* ---------- covers: shown if present, managed on the Mac ---------- */
     readCover: async (bookId, fname) => {
       try {
-        const r = await FS().readFile({ path: p(bookId, fname), directory: DIR });
+        await ready;
+        const r = await FS().readFile(at(p(bookId, fname)));
         const ext = fname.split('.').pop().toLowerCase();
         const mime = ext === 'png' ? 'image/png' : ext === 'webp' ? 'image/webp' : 'image/jpeg';
         return { base64: r.data, mime, ext };
@@ -271,6 +329,7 @@
     gitStatus: async () => ({ available: false, initialized: false }),
 
     onMenu: (cb) => { window.pocketMenu = cb; /* no menu bar: pocket keys call this (index.html) */ },
+    typewriterState: () => {},
     poetryState: () => { /* no Format menu to tick */ }
   };
 

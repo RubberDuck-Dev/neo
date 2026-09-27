@@ -88,18 +88,34 @@ function outlineLine(kind, chId, secId, index, label, text) {
     renderNav();
   });
 
-  txt.addEventListener("keydown", (e) => {
-    if (e.key === "Enter") {
+  // Enter at the very start of a line that has text makes the new line
+  // ABOVE it (the only way to put something before "A"); anywhere else,
+  // below — the way a text editor's outline behaves
+  const caretAtStart = () => {
+    if (!txt.textContent.trim()) return false;
+    const sel = window.getSelection();
+    if (!sel.rangeCount || !sel.isCollapsed) return false;
+    const r = sel.getRangeAt(0);
+    if (!txt.contains(r.startContainer)) return false;
+    const head = document.createRange();
+    head.selectNodeContents(txt);
+    head.setEnd(r.startContainer, r.startOffset);
+    return head.toString().length === 0;
+  };
+
+  txt.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
       e.preventDefault();
+      const above = caretAtStart();
       save();
-      if (kind === "chapter") {
-        const at = book.chapterOrder.indexOf(chId) + 1;
+      if (kind === 'chapter') {
+        const at = book.chapterOrder.indexOf(chId) + (above ? 0 : 1);
         const newId = createChapterAt(at);
         renderOutline({ chId: newId });
       } else {
         const list = book.sectionNotes[chId];
-        const newSec = { id: "sec-" + Date.now().toString(36), text: "" };
-        list.splice(index + 1, 0, newSec);
+        const newSec = { id: 'sec-' + Date.now().toString(36), text: '' };
+        list.splice(index + (above ? 0 : 1), 0, newSec);
         scheduleMetaSave();
         syncGhosts(chId);
         renderOutline({ secId: newSec.id });
@@ -326,10 +342,8 @@ function syncGhosts(chId) {
 }
 
 let auxDirty = false;
-$("#aux-editor").addEventListener("keydown", (e) => {
-  styleKeepScroll(e);
-});
-$("#aux-editor").addEventListener("input", () => {
+$('#aux-editor').addEventListener('keydown', (e) => { if (styleKeepScroll(e)) return; smartKeys(e, e.currentTarget); });
+$('#aux-editor').addEventListener('input', () => {
   auxDirty = true;
   scheduleAuxSave();
   {

@@ -13,11 +13,13 @@ Get the latest installer from the **[Releases page](../../releases)**:
 - **macOS** — download the `.dmg` for older Intel machines or the arm64 file for Mac silicon. Open it and drag NEO to Applications.
 - **Windows** — download the `.exe` and run it. Or get the setup installer and run that.
 
+- **Linux** — download the `.AppImage`, make it executable with `chmod +x NEO-*.AppImage`, then run `./NEO-*.AppImage`. If the system reports an Electron sandbox startup error, upstream documents `--no-sandbox` as a workaround. New Linux libraries use `~/Documents/NEO-Library`; existing library paths are preserved.
+
 ## Why NEO?
 
 **The bookshelf** 
 
-Your library looks like a bookshelf, not a file list. Labeled shelves you organize however you like — by series, by status, by pen name. Progress bars on the covers show how far you are from your word goals. You can drag-and-drop books anywhere. You can also drag shelves around and put cover art on your titles. Use a shelf’s ⋯ menu to delete it while keeping its books; right-click a book and choose “Move to another author…” to change its pen name.
+Your library looks like a bookshelf, not a file list. Labeled shelves you organize however you like — by series, by status, by pen name. Progress bars on the covers show how far you are from your word goals. You can drag-and-drop books anywhere. Drag a book to the author name to move it to another pen name; Esc or Ctrl/Cmd+Z can undo that move for 15 seconds. File → Reshelve a Book finds books still on disk but no longer on a shelf. You can also drag shelves around and put cover art on your titles. Use a shelf’s ⋯ menu to delete it while keeping its books; right-click a book and choose “Move to another author…” to change its pen name.
 
 **Search every book**
 
@@ -33,11 +35,11 @@ When you're editing, not drafting: Edit → Revision Pass (⌘⇧;) marks echoes
 
 **Read aloud**
 
-Hearing your prose catches clunky rhythm and missing words that your eyes skip. Edit → Read Aloud (⌘⇧R) reads from the caret to the end of the chapter, or just the selection, in your computer's own voice, and lights up each sentence as it goes. Any key stops it. Pick the voice and speed in Edit → Read Aloud Settings.
+Hearing your prose catches clunky rhythm and missing words that your eyes skip. Edit → Read Aloud (⌘⌥R) reads from the caret to the end of the chapter, or just the selection, in your computer's own voice, and lights up each sentence as it goes. Any key stops it. Pick the voice and speed in Edit → Read Aloud Settings.
 
 **Focus mode**
 
-View → Focus Mode (⌘⇧U) fades everything but the paragraph you're writing. Off by default; NEO remembers your choice.
+View → Focus Mode (⌘⇧O / Ctrl+Shift+O) cycles paragraph, sentence, and off. Focus follows the caret as you click or use the arrow keys. Off by default; NEO remembers your choice.
 
 **Enter, Enter, Enter** 
 
@@ -81,7 +83,7 @@ Continuous autosave, daily zip backups kept for two weeks, everything stored as 
 
 **Version history**
 
-Optional local checkpoints preserve complete book states while you write. Browse them from File → Saving & Recovery; Compare shows exactly what changed since any version, chapter by chapter, before you decide to restore it. Enable GitHub backup in ✦ Plugins, then open its backup settings to connect an empty GitHub repository for the entire NEO Library. NEO creates its local history automatically, and you can opt into background GitHub backups after each version. NEO never creates a public repository. New computer? "Set up this computer from a backup…" in GitHub backup settings downloads the library and picks up the backups where they left off; anything already on that computer is set aside, not deleted.
+Optional local checkpoints preserve complete book states while you write. Browse them from File → Saving & Recovery; Compare shows exactly what changed since any version, chapter by chapter, before you decide to restore it. Enable GitHub backup in ✦ Plugins, then use the GitHub backup tab in File → Saving & Recovery (or its Plugin Library settings) to connect an empty GitHub repository for the entire NEO Library. NEO creates its local history automatically, and you can opt into background GitHub backups after each version. NEO never creates a public repository. New computer? "Set up this computer from a backup…" in GitHub backup settings downloads the library and picks up the backups where they left off; anything already on that computer is set aside, not deleted.
 
 Spellcheck uses bundled offline dictionaries, loaded only when needed. Choose a book’s manuscript language in File → Book Settings; it controls export metadata independently of the spellcheck dictionary. Revision Pass currently supports English manuscripts.
 

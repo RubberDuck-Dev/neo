@@ -23,7 +23,9 @@ window.neo.onMenu(async (msg) => {
   if (msg.type === "readAloud") toggleReadAloud();
   if (msg.type === "publishingDetails") openPublishingDetails({ tab: msg.tab || "manuscript" });
   if (msg.type === "typewriter") toggleTypewriter();
-  if (msg.type === "focusMode") toggleFocusMode();
+  if (msg.type === "focusMode" || msg.type === "focusCycle") cycleFocus();
+  if (msg.type === "focus") setFocus(msg.value);
+  if (msg.type === "reshelve") reshelveBook();
   if (msg.type === "import") importBooks();
   if (msg.type === "preferences") openPreferences();
   if (msg.type === "bookSettings") openBookSettings();

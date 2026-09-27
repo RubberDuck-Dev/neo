@@ -538,11 +538,16 @@ function bookTile(meta) {
     ? `${meta.title} — ${(meta.wordCount || 0).toLocaleString()} / ${meta.wordGoal.toLocaleString()} words`
     : meta.title;
   el.onclick = () => openBook(meta.id);
-  el.addEventListener("dragstart", (e) => {
-    e.dataTransfer.setData("application/x-neo-book", meta.id);
-    el.classList.add("dragging");
+  el.addEventListener('dragstart', (e) => {
+    e.dataTransfer.setData('application/x-neo-book', meta.id);
+    // the ghost that rides under the cursor is a faded, smaller cover, held
+    // by its top-left corner so it never sits on top of a drop target's label
+    el.style.opacity = '0.45';
+    el.style.transform = 'scale(0.7)';
+    e.dataTransfer.setDragImage(el, 12, 12);
+    setTimeout(() => { el.style.opacity = ''; el.style.transform = ''; el.classList.add('dragging'); }, 0);
   });
-  el.addEventListener("dragend", () => el.classList.remove("dragging"));
+  el.addEventListener('dragend', () => el.classList.remove('dragging'));
   // images dragged from Finder onto a book become its cover;
   // manuscripts dropped here import onto this book's shelf
   el.addEventListener("dragover", (e) => {
@@ -1000,28 +1005,33 @@ $("#author-chip").onclick = async () => {
 };
 
 
+let lastShelfMove = null;
+
 // Shelf membership is the single source of book ownership. No files move.
 async function moveBookToAuthor(bookId, authorId, shelfId) {
   const author = library.authors.find((item) => item.id === authorId);
   if (!author) throw new Error("Author no longer exists");
-  let destination = shelvesFor(authorId).find((item) => item.id === shelfId);
+  let destination = shelfId ? shelvesFor(authorId).find((item) => item.id === shelfId) : shelvesFor(authorId)[0];
   if (shelfId && !destination) throw new Error("Destination shelf no longer exists");
   const meta = await window.neo.readBookMeta(bookId);
   if (!meta) throw new Error("Book no longer exists");
   const previous = structuredClone(library.shelves);
+  const from = library.shelves.find(s => s.bookIds.includes(bookId));
+  const move = { bookId, title: meta.title, author: meta.author, shelfId: from?.id || null, index: from ? from.bookIds.indexOf(bookId) : 0, authorId: ownerOfBook(bookId)?.id || currentAuthor().id, at: Date.now() };
   if (!destination) {
     destination = { id: "shelf-" + crypto.randomUUID(), name: "Works in Progress", authorId, bookIds: [] };
     library.shelves.push(destination);
   }
   for (const shelf of library.shelves) shelf.bookIds = shelf.bookIds.filter((id) => id !== bookId);
-  destination.bookIds.push(bookId);
+  destination.bookIds.unshift(bookId);
   try { await window.neo.writeLibrary(library); }
   catch (err) { library.shelves = previous; throw err; }
   // Persist ownership first; startup can repair the display name if this write fails.
   meta.author = author.name;
   await window.neo.writeBookMeta(bookId, meta);
   await renderShelves();
-  toast(`Moved “${meta.title}” to ${author.name}`);
+  lastShelfMove = move;
+  toast(`Moved “${meta.title}” to ${author.name} — Esc puts it back`, 6000);
 }
 
 async function chooseBookAuthor(bookId) {
@@ -1077,4 +1087,111 @@ async function openShelfMenu(shelf) {
   }
   try { await deleteShelf(shelf.id, destinationId === "__new__" ? undefined : destinationId); }
   catch (err) { toast(`Could not delete the shelf: ${err.message}`); }
+}
+
+// Drag a book up to your name: if you write under other names too, a little
+// rack of shelves unfolds beneath it, one per pen name, and the book can be
+// dropped onto one. It lands on that name's top shelf and takes the name.
+// With a single author there is nothing to unfold, so nothing happens.
+(() => {
+  const chip = $('#author-chip');
+  let rack = null;
+  let hideTimer = null;
+  const otherAuthors = () => (library.authors || []).filter((a) => a.id !== currentAuthor().id);
+  const isBookDrag = (e) => e.dataTransfer && e.dataTransfer.types.includes('application/x-neo-book');
+
+  function showRack() {
+    if (rack) return;
+    const others = otherAuthors();
+    if (!others.length) return;
+    rack = document.createElement('div');
+    rack.id = 'pen-rack';
+    for (const a of others) {
+      const slot = document.createElement('div');
+      slot.className = 'pen-slot';
+      slot.textContent = a.name;
+      slot.dataset.authorId = a.id;
+      slot.addEventListener('dragover', (e) => {
+        if (!isBookDrag(e)) return;
+        e.preventDefault();
+        e.dataTransfer.dropEffect = 'move';
+        slot.classList.add('over');
+        clearTimeout(hideTimer);
+      });
+      slot.addEventListener('dragleave', () => slot.classList.remove('over'));
+      slot.addEventListener('drop', async (e) => {
+        if (!isBookDrag(e)) return;
+        e.preventDefault();
+        e.stopPropagation();
+        const bookId = e.dataTransfer.getData('application/x-neo-book');
+        hideRack();
+        await moveBookToAuthor(bookId, a.id);
+      });
+      rack.appendChild(slot);
+    }
+    const r = chip.getBoundingClientRect();
+    rack.style.top = (r.bottom + 8) + 'px';
+    // the rack hangs from the name and reaches leftward, so the names on its
+    // planks sit well clear of the cover riding under the cursor
+    rack.style.right = Math.max(12, window.innerWidth - r.right) + 'px';
+    document.body.appendChild(rack);
+    requestAnimationFrame(() => rack.classList.add('open'));
+  }
+  function hideRack() {
+    clearTimeout(hideTimer);
+    if (rack) { rack.remove(); rack = null; }
+  }
+  const armHide = () => { clearTimeout(hideTimer); hideTimer = setTimeout(hideRack, 400); };
+
+  chip.addEventListener('dragenter', (e) => { if (isBookDrag(e)) { e.preventDefault(); showRack(); } });
+  chip.addEventListener('dragover', (e) => { if (isBookDrag(e)) { e.preventDefault(); clearTimeout(hideTimer); } });
+  chip.addEventListener('dragleave', armHide);
+  document.addEventListener('dragover', (e) => {
+    // leaving both the chip and the rack lets the rack fold away
+    if (rack && !rack.contains(e.target) && e.target !== chip) armHide();
+  });
+  document.addEventListener('dragend', hideRack);
+  document.addEventListener('drop', hideRack);
+})();
+
+
+async function undoShelfMove() {
+  const m = lastShelfMove;
+  if (!m || Date.now() - m.at > 15000) return false;
+  lastShelfMove = null;
+  const home = library.shelves.find((s) => s.id === m.shelfId) || shelvesFor(m.authorId)[0] || library.shelves[0];
+  for (const s of library.shelves) s.bookIds = s.bookIds.filter((b) => b !== m.bookId);
+  home.bookIds.splice(Math.min(m.index, home.bookIds.length), 0, m.bookId);
+  const meta = await window.neo.readBookMeta(m.bookId);
+  if (meta) { meta.author = m.author; await window.neo.writeBookMeta(m.bookId, meta); }
+  await window.neo.writeLibrary(library);
+  renderShelves();
+  toast(`“${m.title}” is back where it was`);
+  return true;
+}
+document.addEventListener('keydown', (e) => {
+  if (!$('#editor-view').hidden || !lastShelfMove) return;
+  const undoKey = e.key === 'Escape' || ((e.metaKey || e.ctrlKey) && !e.shiftKey && e.key.toLowerCase() === 'z');
+  if (!undoKey) return;
+  if (document.querySelector('.modal-backdrop:not([hidden])')) return;
+  e.preventDefault();
+  e.stopPropagation();
+  undoShelfMove();
+}, true);
+
+// File → Reshelve a Book…: a book taken off the shelves is still on disk;
+// this puts it back, on the current name's first shelf
+async function reshelveBook() {
+  const all = await window.neo.listBooks();
+  const shelved = new Set(library.shelves.flatMap((s) => s.bookIds));
+  const loose = all.filter((b) => !shelved.has(b.id)).sort((a, b) => (b.modified || '').localeCompare(a.modified || ''));
+  if (!loose.length) { toast('Every book in your library is already on a shelf'); return; }
+  const pick = await optionModal('Books in your library that aren’t on a shelf', null,
+    loose.map((b) => ({ label: escHtml(b.title), desc: b.author ? 'by ' + escHtml(b.author) : '', value: b.id })));
+  if (!pick) return;
+  const shelf = shelvesFor(currentAuthor().id)[0] || library.shelves[0];
+  shelf.bookIds.push(pick);
+  await window.neo.writeLibrary(library);
+  renderShelves();
+  toast(`“${loose.find((b) => b.id === pick).title}” is back on the shelf`);
 }

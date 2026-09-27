@@ -87,12 +87,9 @@ test('Focus mode dims everything but the current paragraph', async (t) => {
     await r.menu({ type: 'focusMode' });
     await r.page.click('.chapter[data-id="c1"] .chapter-body p:nth-child(2)');
     await r.page.waitForTimeout(350);
-    const [current, other] = await r.page.evaluate(() => {
-      const ps = document.querySelectorAll('.chapter[data-id="c1"] .chapter-body p');
-      return [getComputedStyle(ps[1]).opacity, getComputedStyle(ps[2]).opacity];
-    });
-    assert.equal(current, '1');
-    assert.ok(Number(other) < 0.5);
+    const text = await r.page.locator('.chapter[data-id="c1"] .chapter-body p:nth-child(2)').textContent();
+    assert.deepEqual(await r.highlight('neo-focus'), [text]);
+    assert.equal(await r.page.locator('body').evaluate(el => el.classList.contains('focus-mode')), true);
     assert.deepEqual(r.errors, []);
   } finally { await r.close(); }
 });

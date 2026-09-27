@@ -5,14 +5,15 @@ NeoPlugins.define("github", { name: "GitHub backup", icon: "⌘", kind: "Backup"
   const { escHtml, toast, ipcErrorText, timeAgo } = ctx;
   const api = ctx.git;
   let active = null;
-  function configure() {
+  function configure({ onLocal } = {}) {
     if (active) return;
     let git = ctx.librarySettings.history?.git || {};
     let busy = true, connected = false, editingConnection = false, available = false, lastPushAt = null;
     let timer;
     const { bd, close } = ctx.settingsDialog({
-      title: "GitHub backup", scope: "Entire library · all authors", className: "github-settings-modal",
-      back: ctx.openLibrary, canClose: () => !busy,
+      title: onLocal ? "Saving & recovery" : "GitHub backup", scope: "Entire library · all authors", className: "github-settings-modal",
+      tabs: onLocal ? [{ label: 'Local saving', select: () => { if (close()) onLocal(); } }, { label: 'GitHub backup', active: true }] : [],
+      back: onLocal ? null : ctx.openLibrary, canClose: () => !busy,
       onClose: () => { clearInterval(timer); active = null; },
       content: `
         <p>Keep a copy of your library on GitHub. Your writing always autosaves locally, whether or not backup is connected.</p>
@@ -98,7 +99,7 @@ NeoPlugins.define("github", { name: "GitHub backup", icon: "⌘", kind: "Backup"
     });
     $('#sy-git-restore').onclick = () => {
       const url = connected ? $('#git-repository').value : $('#sy-git-remote').value;
-      if (close()) recovery(url);
+      if (close()) recovery(url, onLocal);
     };
     timer = setInterval(last, 30000);
     controls();
@@ -113,7 +114,7 @@ NeoPlugins.define("github", { name: "GitHub backup", icon: "⌘", kind: "Backup"
       finally { busy = false; controls(); }
     })();
   }
-  function recovery(remoteUrl) {
+  function recovery(remoteUrl, onLocal) {
     let busy = false;
     const { bd, close } = ctx.settingsDialog({
       title: 'Restore from GitHub', scope: 'Entire library · all authors', canClose: () => !busy,
@@ -122,7 +123,7 @@ NeoPlugins.define("github", { name: "GitHub backup", icon: "⌘", kind: "Backup"
       actions: '<button class="recovery-back btn-quiet">← GitHub backup</button><button class="restore-confirm btn-gold">Download and use backup…</button>'
     });
     ctx.own(bd); active = { close: () => { busy = false; close(); } };
-    bd.querySelector('.recovery-back').onclick = () => { if (close()) configure(); };
+    bd.querySelector('.recovery-back').onclick = () => { if (close()) configure({ onLocal }); };
     bd.querySelector('.restore-confirm').onclick = async () => {
       const url = bd.querySelector('input').value.trim();
       const status = bd.querySelector('[role="status"]');

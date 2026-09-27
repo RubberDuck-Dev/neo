@@ -42,3 +42,22 @@ test('English chapter headings still import as before', async () => {
   assert.deepEqual(book.chapters.map((c) => c.title), ['', 'The Well']);
   assert.ok(book.chapters[1].paras.some((p) => p.scene));
 });
+
+test('Google Docs Title-styled tabs become a book title and chapter boundaries', async () => {
+  const JSZip = require('jszip');
+  const zip = new JSZip();
+  const para = (text, style='') => `<w:p>${style ? `<w:pPr><w:pStyle w:val="${style}"/></w:pPr>` : ''}<w:r><w:t>${text}</w:t></w:r></w:p>`;
+  zip.file('word/document.xml', `<w:document><w:body>${para('The Journey','Title')}${para('Opening','Heading1')}${para('The first page begins here.')}${para('Second tab','Title')}${para('The Long Way Home','Heading1')}${para('The next page begins here.')}</w:body></w:document>`);
+  const file = path.join(neo.home,'google-tabs.docx');
+  fs.writeFileSync(file,await zip.generateAsync({type:'nodebuffer'}));
+  const [book] = await neo.call('import:files',[file]);
+  assert.equal(book.title,'The Journey');
+  assert.deepEqual(book.chapters.map(c=>c.title),['Opening','Second tab — The Long Way Home']);
+  assert.equal(book.chapters.length,2);
+});
+
+test('reshelving can discover books without shelf membership', async () => {
+  neo.write('book-unshelved/book.json',{id:'book-unshelved',title:'Forgotten',author:'Writer'});
+  const books=await neo.call('library:listBooks');
+  assert.ok(books.some(b=>b.id==='book-unshelved'&&b.title==='Forgotten'));
+});

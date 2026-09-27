@@ -4,9 +4,16 @@
 /*  NAV PANE                                                           */
 /* ================================================================== */
 
+let chapterDragActive = false;
+let navRefreshPending = false;
+
 function renderNav() {
-  const list = $("#nav-list");
-  list.innerHTML = "";
+  if (!book) return; // a refresh queued just before the shelf came back
+  // Replacing the source row during a native drag can interrupt its lifecycle.
+  if (chapterDragActive) { navRefreshPending = true; return; }
+  navRefreshPending = false;
+  const list = $('#nav-list');
+  list.innerHTML = '';
   book.chapterNotes = book.chapterNotes || {};
   book.chapterOrder.forEach((chId, i) => {
     const words = chapterWords(chId);
@@ -28,18 +35,16 @@ function renderNav() {
     // the row is the drag handle, so the note below stays freely editable
     const rowEl = item.querySelector(".n-row");
     rowEl.draggable = true;
-    rowEl.addEventListener("dragstart", (e) => {
-      e.dataTransfer.setData("application/x-neo-chapter", chId);
-      item.classList.add("dragging");
+    rowEl.addEventListener('dragstart', (e) => {
+      e.dataTransfer.setData('application/x-neo-chapter', chId);
+      chapterDragActive = true;
+      $('#nav-pane').classList.add('open');
+      item.classList.add('dragging');
     });
-    rowEl.addEventListener("dragend", () => {
-      item.classList.remove("dragging");
-      const ind = document.querySelector(".nav-drop-ind");
-      if (ind) ind.remove();
-    });
+    rowEl.addEventListener('dragend', finishChapterDrag);
 
     // outline your whole book from this panel:
-    const note = document.createElement("div");
+    const note = document.createElement('div');
     note.className = "nav-note";
     note.contentEditable = "true";
     note.spellcheck = false;
@@ -136,9 +141,29 @@ $("#nav-add").onclick = () => {
 };
 
 // drop target for chapter reordering, with a gold line showing the landing spot
-const navList = $("#nav-list");
+const navList = $('#nav-list');
+function finishChapterDrag(e) {
+  if (!chapterDragActive) return;
+  chapterDragActive = false;
+  navList.querySelectorAll('.dragging').forEach((el) => el.classList.remove('dragging'));
+  const ind = navList.querySelector('.nav-drop-ind');
+  if (ind) ind.remove();
+  // Native dragging can temporarily blur the window. Use the release position
+  // to keep the pane available after an in-pane drop, even before focus returns.
+  const pane = $('#nav-pane');
+  const r = pane.getBoundingClientRect();
+  if (pane.dataset.pinned !== '1' && (e.clientX < r.left || e.clientX >= r.right || e.clientY < r.top || e.clientY >= r.bottom)) {
+    pane.classList.remove('open');
+  }
+  if (navRefreshPending) renderNav();
+}
+// Drop also cleans up if rendering removes the source before dragend bubbles.
+// Dragend covers Escape and releases outside a valid drop target.
+document.addEventListener('drop', finishChapterDrag);
+document.addEventListener('dragend', finishChapterDrag);
+
 function navDropInd() {
-  let ind = document.querySelector(".nav-drop-ind");
+  let ind = document.querySelector('.nav-drop-ind');
   if (!ind) {
     ind = document.createElement("div");
     ind.className = "nav-drop-ind";
@@ -204,10 +229,11 @@ function scheduleNavRefresh() {
 
 // Hover behavior for both side panes:
 function wireHoverPane(hotzone, pane, isPinnable) {
-  const pinned = () => isPinnable && pane.dataset.pinned === "1";
-  hotzone.addEventListener("mouseenter", (e) => {
+  const pinned = () => (isPinnable && pane.dataset.pinned === '1') ||
+    (pane.id === 'nav-pane' && chapterDragActive);
+  hotzone.addEventListener('mouseenter', (e) => {
     if (e.buttons) return; // dragging something — stand down
-    pane.classList.add("open");
+    pane.classList.add('open');
   });
   hotzone.addEventListener("mouseleave", (e) => {
     if (pinned()) return;
@@ -224,7 +250,7 @@ wireHoverPane($("#side-hotzone"), $("#side-pane"), true);
 
 // leaving the window closes unpinned panes (they used to stick open)
 function closeUnpinnedPanes() {
-  if ($("#nav-pane").dataset.pinned !== "1")
+  if (!chapterDragActive && $("#nav-pane").dataset.pinned !== "1")
     $("#nav-pane").classList.remove("open");
   if ($("#side-pane").dataset.pinned !== "1")
     $("#side-pane").classList.remove("open");

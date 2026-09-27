@@ -77,6 +77,6 @@ loadPlugins().then(async () => {
   NeoPlugins.notify("refresh");
   typewriterEnabled = !!library.typewriter;
   applyTypewriter();
-  focusModeOn = !!library.focusMode;
-  applyFocusMode();
+  focusLevel = FOCUS_LEVELS.includes(library.focus) ? library.focus : library.focusMode ? 'paragraph' : 'off';
+  applyFocus();
 }).catch((err) => reportError(err.stack || String(err)));

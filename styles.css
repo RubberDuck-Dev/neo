@@ -467,7 +467,7 @@ body.typewriter #paper { margin-bottom: 60vh; }
 
 /* --- Chapters: each starts on a fresh sheet --- */
 .chapter-head {
-  text-align: center; font-family: Georgia, serif;
+  text-align: center; font-family: var(--body-font);
   font-size: calc(15px * var(--page-zoom, 1)); letter-spacing: 4px; text-transform: uppercase;
   color: var(--paper-muted); margin-bottom: 44px;
   user-select: none;
@@ -590,12 +590,12 @@ body.bright .spell-menu button { color: var(--ui-text); }
 
 /* --- Aux paper (Notes / Outline / Darlings) --- */
 #aux-paper h2 {
-  font-family: Georgia, serif; font-weight: 400; letter-spacing: 3px;
+  font-family: var(--body-font); font-weight: 400; letter-spacing: 3px;
   text-transform: uppercase; font-size: 14px; color: var(--paper-muted);
   text-align: center; margin-bottom: 40px;
 }
 #aux-editor {
-  font-family: Georgia, serif; font-size: calc(var(--editor-size, 16px) * var(--page-zoom, 1)); line-height: 1.7; outline: none;
+  font-family: var(--body-font); font-size: calc(var(--editor-size, 16px) * var(--page-zoom, 1)); line-height: 1.7; outline: none;
   min-height: 50vh;
 }
 #aux-editor:empty::before { content: 'Write freely…'; color: var(--paper-faint); font-style: italic; }
@@ -608,12 +608,12 @@ body.bright .spell-menu button { color: var(--ui-text); }
 .ol-chapter { margin-top: 18px; }
 .ol-section { margin-left: 40px; }
 .ol-num {
-  font-family: Georgia, serif; color: var(--paper-muted); min-width: 24px; text-align: right;
+  font-family: var(--body-font); color: var(--paper-muted); min-width: 24px; text-align: right;
   user-select: none; flex-shrink: 0;
 }
 .ol-chapter .ol-num { font-weight: 700; color: var(--paper-muted); }
 .ol-text {
-  flex: 1; outline: none; font-family: Georgia, serif;
+  flex: 1; outline: none; font-family: var(--body-font);
   line-height: 1.5; min-height: 20px; border-bottom: 1px dashed transparent;
 }
 .ol-text:focus { border-bottom-color: color-mix(in srgb, var(--accent) 45%, var(--paper)); }
@@ -981,11 +981,10 @@ body.bright .show-scrollbar::-webkit-scrollbar-thumb:hover { background: rgba(25
 .status-menu button { font-family: system-ui, sans-serif; font-size: 13px; }
 
 /* Focus mode: the paragraph you're in stays; the rest steps back */
-body.focus-mode .chapter-body > p,
-body.focus-mode .chapter-head,
-body.focus-mode #title-page { opacity: 0.28; transition: opacity 0.25s ease; }
-body.focus-mode .chapter-body > p.focus-current { opacity: 1; }
-body.focus-mode .chapter-body > p.scene-break { opacity: 0.2; }
+.chapter-body, .chapter-head { transition: color 0.25s ease; }
+body.focus-mode .chapter-body, body.focus-mode .chapter-head { color: color-mix(in srgb, var(--ink) 28%, var(--paper)); }
+::highlight(neo-focus) { color: var(--ink); }
+body.focus-mode .chapter-body.focus-cap:not(.cap-off) p:not(.poetry):not(p:not(.poetry) ~ p)::first-letter { color: var(--ink); }
 
 .shelf-menu { position: absolute; right: 8px; top: 5px; font-size: 20px; padding: 0 8px; }
 
@@ -1022,3 +1021,22 @@ body.focus-mode .chapter-body > p.scene-break { opacity: 0.2; }
   .settings-dialog .dialog-head, .settings-dialog .dialog-body, .settings-dialog .dialog-footer { padding: 16px; }
   .settings-dialog .palette-color-grid { grid-template-columns: 1fr; }
 }
+.settings-tabs { display: flex; flex-shrink: 0; gap: 6px; padding: 0 26px; border-bottom: 1px solid var(--line); }
+.settings-tabs button { border: 0; border-bottom: 2px solid transparent; background: none; color: var(--ui-text-soft); padding: 14px 10px; font-size: 13px; }
+.settings-tabs button[aria-selected="true"] { color: var(--accent); border-bottom-color: var(--accent); }
+.settings-tabs button:focus-visible { outline: 1px solid var(--accent); outline-offset: -4px; }
+
+/* the rack of pen-name shelves that unfolds when a book is dragged to the name */
+#pen-rack {
+  position: fixed; z-index: 90; width: 300px; padding: 10px 14px 6px;
+  background: var(--pane, #202020); border: 1px solid var(--line); border-radius: 8px;
+  box-shadow: 0 8px 30px rgba(0,0,0,0.45);
+  opacity: 0; transform: translateY(-6px); transition: opacity 0.15s ease, transform 0.15s ease;
+}
+#pen-rack.open { opacity: 1; transform: translateY(0); }
+.pen-slot {
+  padding: 16px 8px 8px; margin-bottom: 4px; color: var(--muted); font-size: 14px; letter-spacing: 1px;
+  text-align: left;
+  border-bottom: 4px solid var(--line-strong); border-radius: 2px; transition: color 0.1s, border-color 0.1s, background 0.1s;
+}
+.pen-slot.over { color: var(--ui-text); border-bottom-color: var(--accent); background: rgba(255,255,255,0.04); }

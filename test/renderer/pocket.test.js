@@ -36,7 +36,7 @@ const files = {
   'NEO Library/book-1/chapters/c1.html': '<p>Katherine opened the green door.</p><p>The garden was green.</p>',
 };
 
-async function openPocket() {
+async function openPocket(ios = false) {
   const { chromium } = require('playwright');
   const browser = await chromium.launch();
   const page = await browser.newPage({ viewport: { width: 900, height: 700 } });
@@ -44,10 +44,11 @@ async function openPocket() {
   page.on('pageerror', (e) => errors.push('pageerror: ' + e.message));
   page.on('console', (m) => { if (m.type() === 'error' && !/Failed to load resource/.test(m.text())) errors.push('console: ' + m.text()); });
   page.on('requestfailed', (r) => errors.push('missing: ' + r.url().replace(/^.*neo-pocket-[^/]+\//, '')));
-  await page.addInitScript((seed) => {
+  await page.addInitScript(({seed, ios}) => {
     const store = new Map(Object.entries(seed));
     window.__files = store;
-    const norm = (p) => String(p).replace(/\/+$/, '');
+    window.__cloudFetch = [];
+    const norm = (p) => decodeURI(String(p)).replace('file:///icloud/NEO Library', 'NEO Library').replace(/\/+$/, '');
     const Filesystem = {
       async mkdir() {},
       async readFile({ path }) { if (!store.has(norm(path))) throw new Error('File does not exist'); return { data: store.get(norm(path)) }; },
@@ -61,8 +62,8 @@ async function openPocket() {
       async getUri({ path }) { return { uri: 'file:///pocket/' + path }; },
       async stat({ path }) { if (!store.has(norm(path))) throw new Error('missing'); return { type: 'file' }; },
     };
-    window.Capacitor = { Plugins: { Filesystem }, convertFileSrc: (u) => u, isNativePlatform: () => true };
-  }, files);
+    window.Capacitor = { getPlatform: () => ios ? 'ios' : 'android', Plugins: { Filesystem, LibraryHome: { locate: async () => ({path: 'file:///icloud/NEO%20Library', cloud: true}), fetch: async (options) => { window.__cloudFetch.push(options); } } }, convertFileSrc: (u) => u, isNativePlatform: () => true };
+  }, { seed: files, ios });
   await page.goto('file://' + path.join(www, 'index.html').replace(/\\/g, '/'));
   await page.waitForTimeout(800);
   return { browser, page, errors };
@@ -101,9 +102,26 @@ test('Pocket: library search, Revision Pass and focus mode from the keyboard', a
     await page.waitForTimeout(300);
     assert.ok(await page.evaluate(() => CSS.highlights.has('neo-rev-echo')), 'Revision Pass runs');
     await page.keyboard.press('Escape');
-    await page.keyboard.press('Control+Shift+KeyU');
+    await page.keyboard.press('Control+Shift+KeyO');
     await page.waitForTimeout(200);
     assert.ok(await page.evaluate(() => document.body.classList.contains('focus-mode')));
     assert.deepEqual(errors, []);
   } finally { await browser.close(); }
+});
+
+test('Pocket iOS uses LibraryHome URLs and requests cloud files before reading', async t => {
+  if(!launchable)return t.skip('Chromium unavailable');
+  const {browser,page,errors}=await openPocket(true);
+  try {
+    assert.equal(await page.evaluate(()=>window.neo.libraryPath()),'file:///icloud/NEO%20Library');
+    await page.click('.book'); await page.waitForTimeout(600);
+    assert.match(await page.locator('.chapter-body').textContent(),/Katherine/);
+    await page.click('.chapter-body p:last-child'); await page.keyboard.press('End'); await page.keyboard.type(' From iOS.');
+    await page.waitForTimeout(1100);
+    assert.match(await page.evaluate(()=>window.__files.get('NEO Library/book-1/chapters/c1.html')),/From iOS/);
+    const fetched=await page.evaluate(()=>window.__cloudFetch);
+    assert.ok(fetched.some(f=>f.path?.includes('/book-1/chapters/c1.html')));
+    assert.equal((await page.evaluate(()=>window.neo.listBooks()))[0].id,'book-1');
+    assert.deepEqual(errors,[]);
+  }finally{await browser.close();}
 });

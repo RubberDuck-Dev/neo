@@ -207,8 +207,9 @@ function showHelp() {
         ${row(KPH, 'Placeholder note')}
         ${row(KDA, 'Send the selected passage to Darlings')}
         ${row(K('⌘⇧;', 'Ctrl+Shift+;'), 'Revision pass — echoes, filler, -ly adverbs, name slips. Esc ends it')}
-        ${row(K('⌘⇧U', 'Ctrl+Shift+U'), 'Focus mode — everything but your paragraph fades back')}
-        ${row(K('⌘⇧R', 'Ctrl+Shift+R'), 'Read aloud from the caret, or the selection. Any key stops it')}
+        ${row(K('⌘⇧L/C/R/J', 'Ctrl+Shift+L/C/R/J'), 'Align paragraph: left, center, right, justify')}
+        ${row(K('⌘⇧O', 'Ctrl+Shift+O'), 'Cycle focus — paragraph, sentence, off')}
+        ${row(K('⌘⌥R', 'Ctrl+Alt+R'), 'Read aloud from the caret, or the selection. Any key stops it')}
         ${row(KZ, 'Undo big moves (chapter deletes, replace-all, darlings) when not mid-typing')}
         ${row('-- and ...', 'Become an em dash — and a true ellipsis …')}
         ${row(K('⌘B · ⌘I', 'Ctrl+B · Ctrl+I'), 'Bold, italic. Quotes curl themselves.')}

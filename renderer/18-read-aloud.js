@@ -145,7 +145,7 @@ function readAloudSettingsHtml() {
           <label>Voice <select id="ra-voice"><option value="">System default</option></select></label>
           <label>Speed <span class="ra-rate-row"><input id="ra-rate" type="range" min="0.5" max="2" step="0.1" value="${rate}"/><span id="ra-rate-label">${rate.toFixed(1)}×</span></span></label>
         </div>
-        <div class="sync-actions"><button id="ra-test" class="btn-quiet">Hear a sample</button><span class="soft" style="font-size:12px">Edit → Read Aloud (${K("⌘⇧R", "Ctrl+Shift+R")}) · any key stops it</span></div>
+        <div class="sync-actions"><button id="ra-test" class="btn-quiet">Hear a sample</button><span class="soft" style="font-size:12px">Edit → Read Aloud (${K("⌘⌥R", "Ctrl+Alt+R")}) · any key stops it</span></div>
       </div>`;
 }
 
@@ -205,69 +205,43 @@ function toggleReadAloud() {
 document.addEventListener("keydown", (e) => {
   if (!reading) return;
   if (["Shift", "Control", "Alt", "Meta"].includes(e.key)) return;
-  if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.code === "KeyR") return; // the menu toggles it
+  if ((e.metaKey || e.ctrlKey) && e.altKey && e.code === "KeyR") return; // the menu toggles it
   if (e.key === "Escape") { e.preventDefault(); e.stopImmediatePropagation(); }
   stopReadAloud();
 }, true);
 document.addEventListener("mousedown", () => { if (reading) stopReadAloud(); }, true);
-
-/* ---------- Focus mode (View → Focus Mode) ---------- */
-// Everything but the paragraph you're in fades back. Off by default; the
-// page itself doesn't change, and the choice is remembered.
-let focusModeOn = false;
-let focusPara = null;
-
-function markFocusParagraph(p) {
-  if (p === focusPara) return;
-  if (focusPara && focusPara.isConnected) {
-    focusPara.classList.remove("focus-current");
-    if (!focusPara.classList.length) focusPara.removeAttribute("class");
-  }
-  focusPara = p || null;
-  if (focusPara) focusPara.classList.add("focus-current");
-}
-
-function applyFocusMode() {
-  document.body.classList.toggle("focus-mode", focusModeOn);
-  if (!focusModeOn) markFocusParagraph(null);
-  else {
-    const sel = window.getSelection();
-    const node = sel && sel.anchorNode;
-    const el = node && (node.nodeType === Node.TEXT_NODE ? node.parentElement : node);
-    const p = el && el.closest && el.closest(".chapter-body > p");
-    markFocusParagraph(p);
-  }
-}
-
-function toggleFocusMode() {
-  focusModeOn = !focusModeOn;
-  library.focusMode = focusModeOn;
-  window.neo.writeLibrary(library);
-  applyFocusMode();
-  toast(focusModeOn ? "Focus mode on" : "Focus mode off");
-}
 
 let typewriterEnabled = false;
 // The page needs empty room beneath its last line, or the caret can't be held
 // at the centre once the end of the draft scrolls into view (body.typewriter
 // deepens #paper's bottom margin; see styles.css).
 function applyTypewriter() {
-  document.body.classList.toggle("typewriter", typewriterEnabled);
+  document.body.classList.toggle('typewriter', typewriterEnabled);
+  if (window.neo.typewriterState) window.neo.typewriterState(typewriterEnabled); // the Format menu's tick
 }
 function toggleTypewriter() {
   typewriterEnabled = !typewriterEnabled;
   library.typewriter = typewriterEnabled;
   window.neo.writeLibrary(library);
   applyTypewriter();
-  toast(
-    typewriterEnabled
-      ? "Typewriter scrolling ON — your line stays centered"
-      : "Typewriter scrolling off",
-  );
+  toast(typewriterEnabled ? 'Typewriter scrolling ON — your line stays centered' : 'Typewriter scrolling off');
 }
 
-document.addEventListener("selectionchange", () => {
-  if (!typewriterEnabled || !book || currentTab !== "manuscript") return;
+
+// The page follows the caret only while the writer is typing or moving by
+// keyboard: a click to think about a sentence leaves the screen exactly as
+// it was. The caret has a band of a few lines to move in before the page
+// glides (not snaps) to bring it back to the writing height.
+let typewriterByKeyboard = false;
+document.addEventListener('keydown', (e) => {
+  if (e.metaKey || e.ctrlKey || e.altKey) return;
+  const el = e.target;
+  if (el && el.closest && el.closest('.chapter-body')) typewriterByKeyboard = true;
+}, true);
+document.addEventListener('mousedown', () => { typewriterByKeyboard = false; }, true);
+
+document.addEventListener('selectionchange', () => {
+  if (!typewriterEnabled || !book || currentTab !== 'manuscript' || !typewriterByKeyboard) return;
   const sel = window.getSelection();
   if (!sel.rangeCount || !sel.isCollapsed) return;
   let el = sel.anchorNode;
@@ -279,7 +253,10 @@ document.addEventListener("selectionchange", () => {
       if (!rect || (rect.top === 0 && rect.height === 0))
         rect = el.getBoundingClientRect();
       const diff = rect.top - window.innerHeight * 0.45;
-      if (Math.abs(diff) > 6) $("#paper-scroll").scrollTop += diff;
+      const lineHeight = parseFloat(getComputedStyle(el).lineHeight) || 30;
+      if (Math.abs(diff) <= lineHeight * 1.5) return;
+      const scroller = $("#paper-scroll");
+      scroller.scrollTo({ top: scroller.scrollTop + diff, behavior: 'smooth' });
     } catch {
       /* selection mid-mutation; skip this frame */
     }

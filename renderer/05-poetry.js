@@ -262,7 +262,6 @@ document.addEventListener('selectionchange', () => {
   // during a spellcheck pass, each chapter scans as the caret arrives
   if (revisionOn && caretP) revisionScanHere();
   if (caretP) NeoPlugins.notify("selection");
-  if (focusModeOn) markFocusParagraph(caretP);
   // keep the Format menu's Poetry Paragraph check in step with the caret
   // (the drop cap's cap-off is handled per edit in the beforeinput handler)
   const inPoetry = !!(caretP && caretP.classList.contains('poetry'));
@@ -516,6 +515,10 @@ function newChapter() {
 }
 
 async function deleteChapterQuiet(chId) {
+  // a save still queued for this chapter must not resurrect it (nejcc, #70)
+  clearTimeout(saveTimers[chId]);
+  delete saveTimers[chId];
+  dirtyChapters.delete(chId);
   book.chapterOrder = book.chapterOrder.filter((c) => c !== chId);
   delete chapterHTML[chId];
   delete wordCache[chId];

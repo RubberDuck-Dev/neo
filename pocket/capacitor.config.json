@@ -12,5 +12,9 @@
       "style": "DARK",
       "hidden": true
     }
+  },
+  "ios": {
+    "contentInset": "never",
+    "allowsLinkPreview": false
   }
 }
