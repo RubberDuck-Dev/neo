@@ -179,6 +179,8 @@ async function loadLibrary() {
     showFirstRun();
   }
   renderShelves();
+  // bring older books (which could carry their own author) in line once
+  if (library.firstRunDone && (await syncAllBookAuthors())) renderShelves();
 }
 
 function showFirstRun() {
@@ -294,6 +296,49 @@ function currentAuthor() {
 function shelvesFor(authorId) {
   const homeId = library.authors[0].id;
   return library.shelves.filter((s) => (s.authorId || homeId) === authorId);
+}
+
+// The pen name a book belongs to: the owner of the shelf it sits on.
+function ownerOfBook(bookId) {
+  currentAuthor(); // make sure library.authors exists
+  const homeId = library.authors[0].id;
+  const shelf = library.shelves.find((s) => (s.bookIds || []).includes(bookId));
+  if (!shelf) return null;
+  return library.authors.find((a) => a.id === (shelf.authorId || homeId)) || library.authors[0];
+}
+
+// One name, everywhere: a book's title-page author is always the pen name
+// of the shelf it's on. Rename the pen name (on the shelf or on a title
+// page) and every one of its books follows, so covers and exports agree.
+async function syncBookAuthors(author) {
+  const homeId = library.authors[0].id;
+  const ids = library.shelves.filter((s) => (s.authorId || homeId) === author.id).flatMap((s) => s.bookIds || []);
+  let changed = 0;
+  for (const id of ids) {
+    if (book && book.id === id) {
+      if (book.author !== author.name) {
+        book.author = author.name;
+        if (document.activeElement !== $("#tp-author")) $("#tp-author").textContent = author.name;
+        scheduleMetaSave();
+        changed++;
+      }
+      continue;
+    }
+    const meta = await window.neo.readBookMeta(id);
+    if (meta && meta.author !== author.name) {
+      meta.author = author.name;
+      await window.neo.writeBookMeta(id, meta);
+      changed++;
+    }
+  }
+  return changed;
+}
+
+async function syncAllBookAuthors() {
+  currentAuthor();
+  let changed = 0;
+  for (const a of library.authors) changed += await syncBookAuthors(a);
+  return changed;
 }
 
 function displayAuthor() {
@@ -1324,6 +1369,9 @@ $("#author-chip").onclick = async () => {
     if (name === null) return;
     cur.name = name || cur.name;
     library.authorName = library.authors[0].name; // legacy field follows the first name
+    await window.neo.writeLibrary(library);
+    const n = await syncBookAuthors(cur);
+    if (n) toast(`Updated the author on ${n} book${n === 1 ? "" : "s"}`);
   } else if (pick === "add") {
     const name = await askInput(
       "New pen name",
@@ -1350,6 +1398,8 @@ $("#author-chip").onclick = async () => {
     library.authors = rest;
     library.currentAuthorId = target.id;
     library.authorName = library.authors[0].name;
+    await window.neo.writeLibrary(library);
+    await syncBookAuthors(target); // those books now carry the name they moved to
   }
   await window.neo.writeLibrary(library);
   renderShelves();
@@ -1381,6 +1431,12 @@ async function openBook(bookId) {
 
   $("#tp-title").textContent = book.title === "Untitled" ? "" : book.title;
   $("#tp-subtitle").textContent = book.subtitle || "";
+  const owner = ownerOfBook(book.id);
+  if (owner && book.author !== owner.name) {
+    book.author = owner.name;
+    metaSavePending = true;
+    setTimeout(() => saveMeta(false), 0);
+  }
   $("#tp-author").textContent = book.author || "Anonymous";
   $$('.tab[data-tab="notes"]')[0].textContent = book.tabNames.notes;
   $$('.tab[data-tab="outline"]')[0].textContent = book.tabNames.outline;
@@ -2639,10 +2695,31 @@ $("#tp-subtitle").addEventListener("input", () => {
   book.subtitle = $("#tp-subtitle").textContent.trim();
   scheduleMetaSave();
 });
-// each book can carry its own pen name
-$("#tp-author").addEventListener("input", () => {
-  book.author = $("#tp-author").textContent.trim();
-  scheduleMetaSave();
+// The title-page author is the book's pen name. Typing here renames that
+// pen name when you leave the field, and every book under it follows.
+$("#tp-author").addEventListener("keydown", (e) => {
+  if (e.key === "Enter") { e.preventDefault(); $("#tp-author").blur(); }
+});
+$("#tp-author").addEventListener("blur", async () => {
+  if (!book) return;
+  const owner = ownerOfBook(book.id);
+  const typed = $("#tp-author").textContent.trim();
+  if (!owner) {
+    book.author = typed || book.author;
+    scheduleMetaSave();
+    return;
+  }
+  if (!typed || typed === owner.name) {
+    $("#tp-author").textContent = owner.name;
+    return;
+  }
+  const others = library.shelves.filter((s) => (s.authorId || library.authors[0].id) === owner.id).flatMap((s) => s.bookIds || []).length - 1;
+  owner.name = typed;
+  library.authorName = library.authors[0].name;
+  await window.neo.writeLibrary(library);
+  await syncBookAuthors(owner);
+  $("#author-chip").textContent = displayAuthor();
+  toast(others > 0 ? `Pen name is now “${typed}” — its other ${others} book${others === 1 ? "" : "s"} updated too` : `Pen name is now “${typed}”`, 5000);
 });
 
 // Global editor shortcuts
@@ -4954,7 +5031,7 @@ async function addImportedBooks(results, shelf) {
     // title/byline harvested from the document beat the filename;
     // passing the title in gives the book folder a readable name too
     const meta = await window.neo.createBook({
-      author: r.author || displayAuthor(),
+      author: displayAuthor(), // a book takes its shelf’s pen name
       title: r.title || r.name,
     });
     meta.title = r.title || r.name;
@@ -7314,7 +7391,7 @@ function buildManuscriptDocxEntries(d, contact) {
 
 // The pen name this book is written under (falls back to the current one).
 function authorForBook() {
-  return (library.authors || []).find((a) => a.name === book.author) || currentAuthor();
+  return ownerOfBook(book.id) || (library.authors || []).find((a) => a.name === book.author) || currentAuthor();
 }
 
 // One small form before each manuscript export: the contact block (saved for
