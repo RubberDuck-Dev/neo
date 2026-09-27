@@ -5688,7 +5688,7 @@ function readNextSentence(token) {
     const scroller = $("#paper-scroll");
     scroller.scrollBy({ top: rect.top - window.innerHeight / 3, behavior: "smooth" });
   }
-  const u = new SpeechSynthesisUtterance(item.text);
+  const u = readAloudUtterance(item.text);
   u.onend = () => {
     if (!reading || reading.token !== token) return;
     reading.index++;
@@ -5700,6 +5700,65 @@ function readNextSentence(token) {
     toast("This computer’s voice couldn’t read that");
   };
   window.speechSynthesis.speak(u);
+}
+
+// The writer's chosen voice and speed (Progress & Settings → Read Aloud).
+// Voice names are per computer; an unknown one falls back to the default.
+function readAloudUtterance(text) {
+  const u = new SpeechSynthesisUtterance(text);
+  u.rate = Math.min(2, Math.max(0.5, Number(library.readAloudRate) || 1));
+  const voice = library.readAloudVoice && window.speechSynthesis.getVoices().find((v) => v.name === library.readAloudVoice);
+  if (voice) { u.voice = voice; u.lang = voice.lang; }
+  return u;
+}
+
+function readAloudSettingsHtml() {
+  const rate = Math.min(2, Math.max(0.5, Number(library.readAloudRate) || 1));
+  return `
+      <div class="stats-section readaloud-settings">
+        <h3>Read Aloud</h3>
+        <div class="stats-row">
+          <label>Voice <select id="ra-voice"><option value="">System default</option></select></label>
+          <label>Speed <span class="ra-rate-row"><input id="ra-rate" type="range" min="0.5" max="2" step="0.1" value="${rate}"/><span id="ra-rate-label">${rate.toFixed(1)}×</span></span></label>
+        </div>
+        <div class="sync-actions"><button id="ra-test" class="btn-quiet">Hear a sample</button><span class="soft" style="font-size:12px">Edit → Read Aloud (${K("⌘⇧R", "Ctrl+Shift+R")}) · any key stops it</span></div>
+      </div>`;
+}
+
+function bindReadAloudSettings(bd) {
+  const select = bd.querySelector("#ra-voice");
+  const rate = bd.querySelector("#ra-rate");
+  if (!select || !("speechSynthesis" in window)) {
+    bd.querySelector(".readaloud-settings")?.remove();
+    return () => {};
+  }
+  const fill = () => {
+    const voices = window.speechSynthesis.getVoices();
+    const current = select.value || library.readAloudVoice || "";
+    select.innerHTML = '<option value="">System default</option>' + voices
+      .slice().sort((a, b) => a.lang.localeCompare(b.lang) || a.name.localeCompare(b.name))
+      .map((v) => `<option value="${escHtml(v.name)}">${escHtml(v.name)} (${escHtml(v.lang)})</option>`).join("");
+    select.value = voices.some((v) => v.name === current) ? current : "";
+  };
+  fill();
+  window.speechSynthesis.addEventListener("voiceschanged", fill);
+  rate.addEventListener("input", () => {
+    bd.querySelector("#ra-rate-label").textContent = Number(rate.value).toFixed(1) + "×";
+  });
+  const apply = () => {
+    library.readAloudVoice = select.value || "";
+    library.readAloudRate = Number(rate.value) || 1;
+  };
+  bd.querySelector("#ra-test").onclick = () => {
+    apply();
+    window.speechSynthesis.cancel();
+    window.speechSynthesis.speak(readAloudUtterance("It was a dark and stormy night. This is how your pages will sound."));
+  };
+  return () => {
+    apply();
+    window.speechSynthesis.removeEventListener("voiceschanged", fill);
+    window.speechSynthesis.cancel();
+  };
 }
 
 function toggleReadAloud() {
@@ -6151,6 +6210,7 @@ function openStats() {
       </div>`
           : ""
       }
+      ${readAloudSettingsHtml()}
       <div class="stats-section stats-writing-style">
         <h3>New-book starting point</h3>
         <div class="stats-style-choices" role="group" aria-label="New-book starting point">
@@ -6164,6 +6224,7 @@ function openStats() {
     </div>`;
   document.body.appendChild(bd);
   if (hasBook) bindStatsChart(bd);
+  const finishReadAloudSettings = bindReadAloudSettings(bd);
   const refreshStatsPreview = () => {
     if (!hasBook) return;
     library.dailyGoal = parseInt(bd.querySelector("#st-daily").value, 10) || 0;
@@ -6180,6 +6241,7 @@ function openStats() {
     input.addEventListener("change", refreshStatsPreview);
   });
   const close = async () => {
+    finishReadAloudSettings();
     library.dailyGoal = parseInt(bd.querySelector("#st-daily").value, 10) || 0;
     setWritingDayEnd(parseInt(bd.querySelector("#st-dayends").value, 10) || 0);
     if (hasBook) {
