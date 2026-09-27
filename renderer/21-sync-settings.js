@@ -1,7 +1,7 @@
 "use strict";
 
 /* ================================================================== */
-/*  SYNC SETTINGS — versions and GitHub backup                        */
+/*  SAVING & RECOVERY — local preferences                        */
 /* ================================================================== */
 
 // Electron wraps errors from the main process as
@@ -27,64 +27,42 @@ function timeAgo(iso) {
 
 function openSyncSettings() {
   const settings = historySettings();
-  const hasBook = !!book;
-  const saveTime = lastSavedAt || (hasBook && book.modified ? new Date(book.modified) : null);
+  const saveTime = lastSavedAt || (book?.modified ? new Date(book.modified) : null);
   const saveLabel = saveTime && !Number.isNaN(saveTime.getTime()) ? saveTime.toLocaleString() : "not yet recorded";
-  const checkpointLabel = lastCheckpointAt ? lastCheckpointAt.toLocaleString() : "not yet this session";
-  const bd = document.createElement("div");
-  bd.className = "modal-backdrop";
-  bd.innerHTML = `
-    <div class="modal stats-modal sync-settings-modal">
-      <div class="stats-modal-head"><h2 style="font-size:17px">Sync settings</h2><button class="m-cancel btn-quiet" title="Close">×</button></div>
-      <p class="sync-intro">NEO saves your writing locally as you type. These controls keep recovery copies and, if you choose, a private GitHub backup.</p>
-
-      <div class="stats-section">
-        <h3>Local saving</h3>
-        <p class="sync-status-line">Autosave is on · latest save <strong>${escHtml(saveLabel)}</strong></p>
+  let saving = false;
+  const { bd, close } = settingsDialog({
+    title: "Saving & recovery", scope: "Entire library · all authors", className: "sync-settings-modal",
+    canClose: () => !saving,
+    content: `
+      <p>NEO saves your writing on this computer as you type.</p>
+      <p class="sync-status-line">Autosave is on · latest save <strong>${escHtml(saveLabel)}</strong></p>
+      <section class="stats-section"><h3>Local versions</h3>
         <label class="sync-switch"><input id="sy-history-enabled" type="checkbox" ${settings.enabled !== false ? "checked" : ""}/> <span>Keep automatic versions</span></label>
         <div class="stats-row sync-options-row">
-          <label>Make a version every
-            <select id="sy-history-interval">
-              ${[5, 10, 15, 30, 60].map((minutes) => `<option value="${minutes}"${(Number(settings.intervalMinutes) || 5) === minutes ? " selected" : ""}>${minutes} minutes</option>`).join("")}
-            </select>
-          </label>
-          <label>Keep daily versions for
-            <select id="sy-history-retention">
-              ${[30, 90, 180, 365].map((days) => `<option value="${days}"${(Number(settings.retentionDays) || 90) === days ? " selected" : ""}>${days} days</option>`).join("")}
-            </select>
-          </label>
+          <label>Make a version every<select id="sy-history-interval">${[5,10,15,30,60].map(n => '<option value="'+n+'"'+((Number(settings.intervalMinutes)||5)===n?' selected':'')+'>'+n+' minutes</option>').join('')}</select></label>
+          <label>Keep daily versions for<select id="sy-history-retention">${[30,90,180,365].map(n => '<option value="'+n+'"'+((Number(settings.retentionDays)||90)===n?' selected':'')+'>'+n+' days</option>').join('')}</select></label>
         </div>
-        <p class="sync-detail">Latest version: ${escHtml(checkpointLabel)}.${hasBook ? " You can restore an earlier version of this book at any time." : " Open a book to browse its versions."}</p>
-        ${hasBook ? '<div class="sync-actions"><button id="sy-history-versions" class="btn-quiet">Browse this book’s versions…</button></div>' : ""}
-      </div>
-
-      <div data-plugin-sync></div>
-      <div class="sync-footer">
-        <button class="m-cancel">Cancel</button><button class="m-ok btn-gold">Save settings</button>
-      </div>
-    </div>`;
-  document.body.appendChild(bd);
-
-  const extension = NeoPlugins.contribute("syncSettings", bd);
-  const close = () => { extension?.dispose(); bd.remove(); };
-  bd.querySelectorAll(".m-cancel").forEach((button) => button.onclick = close);
-  bd.querySelector(".m-ok").onclick = async () => {
-    library.history = {
-      ...(library.history || {}),
-      enabled: bd.querySelector("#sy-history-enabled").checked,
-      intervalMinutes: Number(bd.querySelector("#sy-history-interval").value),
-      retentionDays: Number(bd.querySelector("#sy-history-retention").value)
-    };
-    await window.neo.writeLibrary(library);
-    await extension?.save();
-    close(); toast("Sync settings saved");
-  };
-  const versions = bd.querySelector("#sy-history-versions");
-  if (versions) versions.onclick = () => openVersionHistory(book.id);
-  bd.addEventListener("keydown", (e) => {
-    if (e.key === "Escape") {
-      e.stopPropagation();
-      close();
-    }
+        <p class="sync-detail">Local versions let you recover earlier writing. Turning them off does not turn off autosave.</p>
+      </section>
+      <section class="stats-section"><h3>${book ? 'This book · '+escHtml(book.title) : 'Book recovery'}</h3>
+        ${book ? '<button id="sy-history-versions" class="btn-quiet">Browse this book’s versions…</button>' : '<p>Open a book to browse its versions.</p>'}
+      </section>
+      <p class="dialog-error" role="status"></p>`,
+    actions: '<button class="m-cancel btn-quiet">Cancel</button><button class="m-ok btn-gold">Save settings</button>'
   });
+  bd.querySelector('.m-cancel').onclick = close;
+  const enabled = bd.querySelector('#sy-history-enabled');
+  const availability = () => bd.querySelectorAll('select').forEach(el => el.disabled = !enabled.checked);
+  enabled.onchange = availability; availability();
+  bd.querySelector('#sy-history-versions')?.addEventListener('click', () => { if (close()) openVersionHistory(book.id); });
+  bd.querySelector('.m-ok').onclick = async () => {
+    saving = true;
+    const button = bd.querySelector('.m-ok'); button.disabled = true;
+    const next = { ...library.history, enabled: enabled.checked,
+      intervalMinutes: Number(bd.querySelector('#sy-history-interval').value),
+      retentionDays: Number(bd.querySelector('#sy-history-retention').value) };
+    try { await window.neo.writeLibrary({ ...library, history: next }); library.history = next; saving = false; close(); toast('Saving preferences saved'); }
+    catch (err) { bd.querySelector('.dialog-error').textContent = ipcErrorText(err, 'Could not save preferences').text; }
+    finally { saving = false; button.disabled = false; }
+  };
 }

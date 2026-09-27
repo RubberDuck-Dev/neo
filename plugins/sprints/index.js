@@ -1,5 +1,5 @@
 "use strict";
-NeoPlugins.define("sprints", { name: "Writing Sprints", icon: "⚡", kind: "Writing tool", description: "Race a timer or a word count from Progress & Settings.", bookScoped: true }, (ctx) => {
+NeoPlugins.define("sprints", { name: "Writing Sprints", icon: "⚡", kind: "Writing tool", description: "Race a timer or a word count from Progress & Goals.", bookScoped: true }, (ctx) => {
 if (!ctx.hasBook) return {};
 const { $, toast } = ctx;
 const bookWordCount = ctx.wordCount, updateCounters = ctx.refreshCounters;

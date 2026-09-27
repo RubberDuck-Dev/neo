@@ -1,145 +1,143 @@
 "use strict";
-NeoPlugins.define("github", { name: "GitHub backup", icon: "⌘", kind: "Backup", description: "Back up the entire library to a private GitHub repository.", scope: "library", requires: ["git"], libraryFields: ["history"], configureLabel: "Open Sync Settings",
+NeoPlugins.define("github", { name: "GitHub backup", icon: "⌘", kind: "Backup", description: "Back up the entire library to a private GitHub repository.", scope: "library", requires: ["git"], libraryFields: ["history"], configureLabel: "Open backup settings",
   disableSettings(settings) { return { history: { ...settings.history, git: { ...settings.history?.git, enabled: false, autoPush: false } } }; }
 }, (ctx) => {
-const { escHtml, toast } = ctx;
-const ipcErrorText = ctx.ipcErrorText, timeAgo = ctx.timeAgo, optionModal = ctx.optionModal;
-const api = ctx.git;
-const disposers = new Set();
-function syncSettings(bd) {
-  const git = ctx.librarySettings.history?.git || {};
-  const container = bd.querySelector("[data-plugin-sync]");
-  container.innerHTML = `      <div class="stats-section sync-github-section">
-        <h3>GitHub backup <span class="soft">(optional)</span></h3>
-        <p class="sync-detail">Back up the entire NEO Library—not just this book. Create an empty private repository on GitHub, then paste its HTTPS address below.</p>
-        <label class="sync-switch"><input id="sy-git-enabled" type="checkbox" ${git.enabled && git.autoPush !== false ? "checked" : ""}/> <span>Back up automatically after each version</span></label>
-        <p class="sync-detail">NEO creates a private local commit and uploads it in the background. You do not need to run Git commands.</p>
-        <div class="sync-connect-row">
-          <label>GitHub repository address <input id="sy-git-remote" value="${escHtml(git.remoteUrl || "")}" placeholder="https://github.com/you/neo-library.git"/></label>
-          <button id="sy-git-connect" class="btn-gold">Connect &amp; back up</button>
-        </div>
-        <p class="sync-detail">The first backup may ask GitHub to sign you in through your installed Git credentials.</p>
-        <div class="sync-actions"><button id="sy-git-push" class="btn-quiet">Back up now</button><button id="sy-git-replace" class="btn-gold" hidden>Replace GitHub copy</button><span id="sy-git-status" class="sync-git-status"></span></div>
+  const { escHtml, toast, ipcErrorText, timeAgo } = ctx;
+  const api = ctx.git;
+  let active = null;
+  function configure() {
+    if (active) return;
+    let git = ctx.librarySettings.history?.git || {};
+    let busy = true, connected = false, editingConnection = false, available = false, lastPushAt = null;
+    let timer;
+    const { bd, close } = ctx.settingsDialog({
+      title: "GitHub backup", scope: "Entire library · all authors", className: "github-settings-modal",
+      back: ctx.openLibrary, canClose: () => !busy,
+      onClose: () => { clearInterval(timer); active = null; },
+      content: `
+        <p>Keep a copy of your library on GitHub. Your writing always autosaves locally, whether or not backup is connected.</p>
+        <p id="sy-git-status" class="sync-status-line" role="status" aria-live="polite">Checking connection…</p>
         <p id="sy-git-last" class="sync-detail" hidden></p>
-        <div class="sync-actions"><button id="sy-git-restore" class="btn-quiet">Set up this computer from a GitHub backup…</button></div>
-      </div>
-
-`;
-  const status = bd.querySelector("#sy-git-status");
-  const replaceBtn = bd.querySelector("#sy-git-replace");
-  const lastLine = bd.querySelector("#sy-git-last");
-  let lastPushAt = null;
-  const showLastPush = () => {
-    const ago = timeAgo(lastPushAt);
-    lastLine.hidden = !ago;
-    if (ago) lastLine.textContent = `Last backed up to GitHub ${ago}.`;
-  };
-  const lastTimer = setInterval(() => {
-    if (!bd.isConnected) return clearInterval(lastTimer);
-    showLastPush();
-  }, 30000);
-  const showGitStatus = (message, isError = false) => {
-    status.textContent = message;
-    status.style.color = isError ? "var(--red, #b44)" : "";
-    replaceBtn.hidden = true;
-  };
-  const showGitError = (err, fallback) => {
-    const { text, starter } = ipcErrorText(err, fallback);
-    showGitStatus(text, true);
-    replaceBtn.hidden = !starter;
-  };
-  const noteStatus = (current) => {
-    if (current && current.lastPushAt) lastPushAt = current.lastPushAt;
-    showLastPush();
-  };
-  const refreshGitStatus = async () => {
-    try {
-      const current = await api.status();
-      noteStatus(current);
-      if (!current.available) return showGitStatus("Git is not installed.", true);
-      if (!current.initialized) return showGitStatus(current.parentRepo ? "Not connected yet. (Your library sits inside another Git repository; NEO will make its own.)" : "Not connected yet.");
-      const remote = current.remote ? "GitHub connected." : "Local history ready; GitHub not connected.";
-      const auto = git.enabled && git.autoPush !== false;
-      showGitStatus(`${remote} ${current.remote && !auto ? "Automatic backup is off." : current.clean ? "Up to date." : "New writing will be backed up with the next version."}`);
-    } catch (err) {
-      showGitError(err, "Could not check Git status.");
-    }
-  };
-  refreshGitStatus();
-
-
-  const readForm = () => ({ ...git,
-    enabled: bd.querySelector("#sy-git-enabled").checked,
-    autoPush: bd.querySelector("#sy-git-enabled").checked,
-    remoteUrl: bd.querySelector("#sy-git-remote").value.trim()
-  });
-  const saveForm = () => ctx.saveLibrarySettings({ history: { ...ctx.librarySettings.history, git: readForm() } });
-  const withBusy = async (button, work) => {
-    const buttons = bd.querySelectorAll("#sy-git-connect, #sy-git-push, #sy-git-replace, #sy-git-restore");
-    buttons.forEach((b) => (b.disabled = true));
-    try { await work(); } finally { buttons.forEach((b) => (b.disabled = false)); }
-  };
-  bd.querySelector("#sy-git-connect").onclick = (e) => withBusy(e.currentTarget, async () => {
-    try {
-      const remoteUrl = bd.querySelector("#sy-git-remote").value.trim();
-      showGitStatus("Connecting…");
-      await api.connect(remoteUrl);
-      // Connecting is the request for backups: turn automatic backup on
-      // rather than leaving it off because the box wasn't ticked first.
-      bd.querySelector("#sy-git-enabled").checked = true;
-      await saveForm();
-      showGitStatus("Uploading…");
-      noteStatus(await api.push());
-      showGitStatus("Connected. Automatic backups are on.");
-    } catch (err) {
-      showGitError(err, "Could not connect GitHub.");
-    }
-  });
-  bd.querySelector("#sy-git-push").onclick = (e) => withBusy(e.currentTarget, async () => {
-    try {
-      await ctx.flushSaves();
-      showGitStatus("Uploading…");
-      noteStatus(await api.push());
-      showGitStatus("Backed up to GitHub.");
-    } catch (err) {
-      showGitError(err, "Could not back up to GitHub.");
-    }
-  });
-  bd.querySelector("#sy-git-restore").onclick = (e) => withBusy(e.currentTarget, async () => {
-    const remoteUrl = bd.querySelector("#sy-git-remote").value.trim();
-    if (!remoteUrl) {
-      showGitStatus("Paste the backup repository’s address above first.", true);
-      bd.querySelector("#sy-git-remote").focus();
-      return;
-    }
-    const choice = await optionModal("Set up this computer from GitHub?", `NEO will download the library backed up at ${escHtml(remoteUrl)} and use it here.`, [
-      { label: "Download and use it", desc: "If this computer already has books, they’re kept beside it in a folder named “NEO Library (before restore …)”. Nothing is deleted.", value: "restore" },
-    ]);
-    if (choice !== "restore") return;
-    try {
-      await ctx.flushSaves();
-      showGitStatus("Downloading your library…");
-      const result = await api.restore(remoteUrl);
-      showGitStatus(`Restored ${result.books} book${result.books === 1 ? "" : "s"}. Opening…`);
-      if (result.keptAs) toast(`Your earlier library is kept at ${result.keptAs}`, 8000);
-    } catch (err) {
-      showGitError(err, "Could not restore from GitHub.");
-    }
-  });
-  replaceBtn.onclick = (e) => withBusy(e.currentTarget, async () => {
-    try {
-      await ctx.flushSaves();
-      showGitStatus("Replacing GitHub’s starter files with your library…");
-      noteStatus(await api.replaceStarter());
-      showGitStatus("Backed up. GitHub now holds your library.");
-    } catch (err) {
-      showGitError(err, "Could not replace the GitHub copy.");
-    }
-  });
-
-  const dispose = () => { clearInterval(lastTimer); container.replaceChildren(); disposers.delete(dispose); };
-  disposers.add(dispose);
-  return { save: saveForm, dispose };
-}
-return { configure: ctx.openSyncSettings, syncSettings, dispose() { for (const dispose of [...disposers]) dispose(); } };
+        <section id="git-setup" hidden>
+          <p>Create an empty private repository on GitHub, then paste its HTTPS address.</p>
+          <label>GitHub repository address<input id="sy-git-remote" value="${escHtml(git.remoteUrl || '')}" placeholder="https://github.com/you/neo-library.git"/></label>
+          <button id="sy-git-connect" class="btn-gold">Connect &amp; back up</button><button id="git-cancel-connection" class="btn-quiet" hidden>Keep current connection</button>
+          <p class="sync-detail">Connecting turns on automatic backups. Git may ask you to sign in.</p>
+        </section>
+        <section id="git-connected" hidden>
+          <label>Connected repository<input id="git-repository" readonly aria-label="Connected repository"/></label>
+          <button id="git-change-connection" class="btn-quiet">Change repository…</button>
+          <label class="sync-switch"><input id="sy-git-enabled" type="checkbox" ${git.enabled && git.autoPush !== false ? 'checked' : ''}/><span>Back up automatically after each version</span></label>
+          <p class="sync-detail">This preference saves immediately. Automatic backups run when NEO creates a local version.</p>
+          <button id="sy-git-push" class="btn-gold">Back up now</button>
+        </section>
+        <section id="git-conflict" class="stats-section" hidden><h3>Repository has starter files</h3><p>Replace GitHub’s starter files with this library only if you no longer need them.</p><button id="sy-git-replace" class="btn-danger">Replace GitHub copy…</button></section>
+        <section class="stats-section"><h3>Recovery</h3><button id="sy-git-restore" class="btn-quiet">Set up this computer from a backup…</button></section>`,
+      actions: '<button class="m-ok btn-quiet">Done</button>'
+    });
+    ctx.own(bd);
+    active = { close: () => { busy = false; close(); } };
+    const $ = selector => bd.querySelector(selector);
+    const status = (message, error = false) => { $('#sy-git-status').textContent = message; $('#sy-git-status').classList.toggle('dialog-error', error); };
+    const failure = (err, fallback) => {
+      const { text, starter } = ipcErrorText(err, fallback);
+      status(text, true); $('#git-conflict').hidden = !starter;
+    };
+    const last = () => {
+      const ago = timeAgo(lastPushAt); $('#sy-git-last').hidden = !ago;
+      if (ago) $('#sy-git-last').textContent = `Last successful backup ${ago}.`;
+    };
+    const controls = () => {
+      if (busy) bd.firstElementChild.focus();
+      bd.querySelectorAll('button, input').forEach(el => el.disabled = busy);
+      $('#sy-git-connect').disabled = busy || !available;
+      $('#sy-git-restore').disabled = busy || !available;
+      $('#sy-git-push').disabled = busy || !connected;
+      $('#sy-git-enabled').disabled = busy || !connected;
+      $('#git-setup').hidden = (connected && !editingConnection) || !available;
+      $('#git-connected').hidden = !connected || editingConnection;
+      $('#git-cancel-connection').hidden = !connected;
+    };
+    const note = current => { if (current?.lastPushAt) lastPushAt = current.lastPushAt; last(); };
+    const save = async patch => {
+      const next = { ...git, ...patch };
+      await ctx.saveLibrarySettings({ history: { ...ctx.librarySettings.history, git: next } });
+      git = next;
+    };
+    const work = async fn => {
+      if (busy) return;
+      busy = true; controls(); $('#git-conflict').hidden = true;
+      try { await fn(); } catch (err) { failure(err, 'Could not complete the backup operation.'); }
+      finally { busy = false; controls(); }
+    };
+    $('.m-ok').onclick = close;
+    $('#git-change-connection').onclick = () => { editingConnection = true; $('#sy-git-remote').value = $('#git-repository').value; controls(); $('#sy-git-remote').focus(); };
+    $('#git-cancel-connection').onclick = () => { editingConnection = false; controls(); };
+    $('#sy-git-connect').onclick = () => work(async () => {
+      const remoteUrl = $('#sy-git-remote').value.trim();
+      status('Connecting…');
+      await ctx.flushSaves(); await api.connect(remoteUrl);
+      connected = true; editingConnection = false; $('#git-repository').value = remoteUrl;
+      await save({ enabled: true, autoPush: true, remoteUrl });
+      $('#sy-git-enabled').checked = true;
+      status('Uploading…'); note(await api.push());
+      status('Backup complete. Automatic backups are on.');
+    });
+    $('#sy-git-push').onclick = () => work(async () => {
+      await ctx.flushSaves(); status('Uploading…'); note(await api.push()); status('Backup complete.');
+    });
+    $('#sy-git-enabled').onchange = () => work(async () => {
+      const enabled = $('#sy-git-enabled').checked;
+      try { await save({ enabled, autoPush: enabled }); status(enabled ? 'Automatic backups are on.' : 'Automatic backups are off. You can still back up now.'); }
+      catch (err) { $('#sy-git-enabled').checked = !!(git.enabled && git.autoPush !== false); throw err; }
+    });
+    $('#sy-git-replace').onclick = () => work(async () => {
+      const choice = await ctx.optionModal('Replace GitHub’s starter files?', 'The starter files in the connected repository will be replaced by this library.', [{ label: 'Replace starter files', desc: 'Use the library on this computer as the backup.', value: 'replace' }]);
+      if (choice !== 'replace') { $('#git-conflict').hidden = false; return; }
+      await ctx.flushSaves(); status('Replacing starter files…'); note(await api.replaceStarter()); status('Backup complete.');
+    });
+    $('#sy-git-restore').onclick = () => {
+      const url = connected ? $('#git-repository').value : $('#sy-git-remote').value;
+      if (close()) recovery(url);
+    };
+    timer = setInterval(last, 30000);
+    controls();
+    (async () => {
+      try {
+        const current = await api.status();
+        if (!bd.isConnected) return;
+        available = !!current.available; connected = !!(current.initialized && current.remote);
+        note(current); $('#git-repository').value = current.remote || '';
+        status(!available ? 'Git is not installed. Install Git to use this plugin.' : connected ? (lastPushAt ? 'Repository connected.' : 'Repository connected. No successful backup recorded yet.') : 'Not connected yet.');
+      } catch (err) { failure(err, 'Could not check the connection.'); }
+      finally { busy = false; controls(); }
+    })();
+  }
+  function recovery(remoteUrl) {
+    let busy = false;
+    const { bd, close } = ctx.settingsDialog({
+      title: 'Restore from GitHub', scope: 'Entire library · all authors', canClose: () => !busy,
+      onClose: () => { active = null; },
+      content: `<p>Download a backed-up library and use it on this computer. Any existing library is kept in a separate folder.</p><label>Backup repository address<input id="git-restore-url" value="${escHtml(remoteUrl || '')}" placeholder="https://github.com/you/neo-library.git"/></label><p class="dialog-error" role="status"></p>`,
+      actions: '<button class="recovery-back btn-quiet">← GitHub backup</button><button class="restore-confirm btn-gold">Download and use backup…</button>'
+    });
+    ctx.own(bd); active = { close: () => { busy = false; close(); } };
+    bd.querySelector('.recovery-back').onclick = () => { if (close()) configure(); };
+    bd.querySelector('.restore-confirm').onclick = async () => {
+      const url = bd.querySelector('input').value.trim();
+      const status = bd.querySelector('[role="status"]');
+      if (!url) { status.textContent = 'Enter a repository address.'; return; }
+      busy = true; bd.querySelectorAll('button,input').forEach(el => el.disabled = true);
+      try {
+        const choice = await ctx.optionModal('Use the backed-up library here?', 'This switches the entire library on this computer. Your current library will be kept beside it.', [{ label: 'Download and use it', desc: 'Keep the current library in a separate folder and open the backup.', value: 'restore' }]);
+        if (choice !== 'restore') return;
+        await ctx.flushSaves(); status.textContent = 'Downloading…';
+        const result = await api.restore(url);
+        status.textContent = `Restored ${result.books} books. Opening…`;
+        if (result.keptAs) toast(`Your earlier library is kept at ${result.keptAs}`, 8000);
+      } catch (err) { status.textContent = ipcErrorText(err, 'Could not restore the backup.').text; }
+      finally { busy = false; bd.querySelectorAll('button,input').forEach(el => el.disabled = false); }
+    };
+  }
+  return { configure, dispose() { active?.close(); } };
 });

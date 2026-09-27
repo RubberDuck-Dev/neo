@@ -126,7 +126,7 @@ function readNextSentence(token) {
   window.speechSynthesis.speak(u);
 }
 
-// The writer's chosen voice and speed (Progress & Settings → Read Aloud).
+// The writer's chosen voice and speed (Edit → Read Aloud Settings).
 // Voice names are per computer; an unknown one falls back to the default.
 function readAloudUtterance(text) {
   const u = new SpeechSynthesisUtterance(text);
@@ -174,12 +174,15 @@ function bindReadAloudSettings(bd) {
     library.readAloudRate = Number(rate.value) || 1;
   };
   bd.querySelector("#ra-test").onclick = () => {
-    apply();
+    const sample = readAloudUtterance("It was a dark and stormy night. This is how your pages will sound.");
+    sample.rate = Number(rate.value) || 1;
+    sample.voice = window.speechSynthesis.getVoices().find(v => v.name === select.value) || null;
+    sample.lang = sample.voice?.lang || '';
     window.speechSynthesis.cancel();
-    window.speechSynthesis.speak(readAloudUtterance("It was a dark and stormy night. This is how your pages will sound."));
+    window.speechSynthesis.speak(sample);
   };
-  return () => {
-    apply();
+  return (save = true) => {
+    if (save) apply();
     window.speechSynthesis.removeEventListener("voiceschanged", fill);
     window.speechSynthesis.cancel();
   };

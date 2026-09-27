@@ -103,7 +103,7 @@ function configurePlugins() {
           ownedNodes.add(node); return node;
         },
         openLibrary: openPlugins,
-        openSyncSettings: () => openSyncSettings(),
+        settingsDialog,
         ipcErrorText, timeAgo, optionModal,
         async flushSaves() { flushAllSaves(); await NeoPlugins.flush(); },
         git: {
@@ -117,8 +117,11 @@ function configurePlugins() {
           return Object.fromEntries((p.libraryFields || []).map((key) => [key, structuredClone(library[key])]));
         },
         saveLibrarySettings(patch) {
-          for (const key of p.libraryFields || []) if (key in patch) library[key] = structuredClone(patch[key]);
-          return track(() => window.neo.writeLibrary(structuredClone(library)));
+          const changes = Object.fromEntries((p.libraryFields || []).filter(key => key in patch).map(key => [key, structuredClone(patch[key])]));
+          return track(async () => {
+            await window.neo.writeLibrary(structuredClone({ ...library, ...changes }));
+            Object.assign(library, changes);
+          });
         },
         spell: {
           check: (words) => window.neo.spellCheckWords(words),

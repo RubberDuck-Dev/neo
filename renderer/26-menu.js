@@ -25,11 +25,14 @@ window.neo.onMenu(async (msg) => {
   if (msg.type === "typewriter") toggleTypewriter();
   if (msg.type === "focusMode") toggleFocusMode();
   if (msg.type === "import") importBooks();
+  if (msg.type === "preferences") openPreferences();
+  if (msg.type === "bookSettings") openBookSettings();
+  if (msg.type === "readAloudSettings") openReadAloudSettings();
   if (msg.type === "stats") openStats();
   if (msg.type === "syncSettings") openSyncSettings();
   if (msg.type === "gitAutoPushError") {
-    const { text, starter } = ipcErrorText(msg.message, "open Sync Settings to retry");
-    toast(starter ? "GitHub backup paused: the repository has starter files. Open Sync Settings to replace them." : `GitHub backup failed: ${text}`, 7000);
+    const { text, starter } = ipcErrorText(msg.message, "open GitHub backup in Plugin Library to retry");
+    toast(starter ? "GitHub backup paused: the repository has starter files. Open GitHub backup in Plugin Library to replace them." : `GitHub backup failed: ${text}`, 7000);
   }
   if (msg.type === "plugins") openPlugins();
   if (msg.type === "coverArt") openCoverArt();

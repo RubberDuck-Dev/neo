@@ -25,13 +25,13 @@ function openPaletteStudio() {
   const colors = paletteFor(author);
   const selected = author.pluginPalette || "classic";
   const customOptions = (author.customPalettes || []).map((p) => `<option value="${p.id}" ${selected === p.id ? "selected" : ""}>${escHtml(p.name)}</option>`).join("");
-  const bd = document.createElement("div");
-  bd.className = "modal-backdrop";
-  bd.innerHTML = `<div class="modal palette-studio-screen"><div class="palette-studio-top"><button class="palette-back btn-quiet">← Plugin Library</button><button class="m-cancel btn-quiet" title="Close">×</button></div><div class="palette-studio-title"><h2>Palette Studio</h2><p>Every swatch has a job. Edit the writing room live, then save this combination as a custom palette.</p></div><div class="palette-studio-controls"><label><span>Active palette</span><select data-studio-palette><option value="classic" ${selected === "classic" ? "selected" : ""}>Classic gold</option><option value="ink" ${selected === "ink" ? "selected" : ""}>Ink blue</option><option value="moss" ${selected === "moss" ? "selected" : ""}>Moss green</option>${customOptions}</select></label><div class="palette-studio-actions"><button data-studio-reset class="palette-reset">Restore default palette</button><button data-delete-palette class="palette-delete" hidden>Delete custom palette</button></div></div><div class="palette-preview"><div class="palette-preview-chrome"><span>NEO</span><span class="preview-flag">● Flag</span></div><div class="palette-preview-pane">Chapters<br><strong>Chapter one</strong></div><div class="palette-preview-page"><small>CHAPTER ONE</small><h3>A page that feels like yours</h3><p>Manuscript ink, quiet details, and placeholders all respond to their own palette roles.</p><em>Write freely…</em><button>Primary action</button></div></div>${paletteStudioGroup("Writing page", "These colors control the paper itself in the normal page view.", ["paper", "ink", "paperMuted", "paperFaint"], colors)}${paletteStudioGroup("Night page", "These replace the page colors when View → Page → Night is active.", ["nightPaper", "nightInk", "nightMuted", "nightFaint"], colors)}${paletteStudioGroup("Writing room", "These paint the window, panes, dialogs, borders, and interface text.", ["bg", "bgSoft", "pane", "surface", "surfaceRaised", "uiText", "uiTextSoft", "muted", "line", "lineStrong"], colors)}${paletteStudioGroup("Signals & actions", "Shared colors for buttons, selection, flags, alerts, and resolved notes.", ["accent", "onAccent", "danger", "dangerMuted", "resolved"], colors)}<div class="palette-studio-save"><input data-palette-name placeholder="Name this custom palette" maxlength="36"><button data-save-palette class="btn-gold">Save custom palette</button></div></div>`;
-  document.body.appendChild(ctx.own(bd));
-  const close = () => { applyPluginAppearance(); bd.remove(); };
-  bd.querySelector(".m-cancel").onclick = close;
-  bd.querySelector(".palette-back").onclick = () => { close(); ctx.openLibrary(); };
+  const { bd } = ctx.settingsDialog({
+    title: "Palette Studio", scope: "This author · " + ctx.authorName, className: "palette-studio-screen", back: ctx.openLibrary, onClose: applyPluginAppearance,
+    content: `<p class="sync-detail">Choosing a palette applies it immediately. Swatch edits are a preview until you save a custom palette; closing discards unsaved edits.</p><div class="palette-studio-controls"><label><span>Active palette</span><select data-studio-palette><option value="classic" ${selected === "classic" ? "selected" : ""}>Classic gold</option><option value="ink" ${selected === "ink" ? "selected" : ""}>Ink blue</option><option value="moss" ${selected === "moss" ? "selected" : ""}>Moss green</option>${customOptions}</select></label><div class="palette-studio-actions"><button data-studio-reset class="palette-reset">Restore default palette</button><button data-delete-palette class="palette-delete" hidden>Delete custom palette</button></div></div><div class="palette-preview"><div class="palette-preview-chrome"><span>NEO</span><span class="preview-flag">● Flag</span></div><div class="palette-preview-pane">Chapters<br><strong>Chapter one</strong></div><div class="palette-preview-page"><small>CHAPTER ONE</small><h3>A page that feels like yours</h3><p>Manuscript ink, quiet details, and placeholders all respond to their own palette roles.</p><em>Write freely…</em><button>Primary action</button></div></div>${paletteStudioGroup("Writing page", "These colors control the paper itself in the normal page view.", ["paper", "ink", "paperMuted", "paperFaint"], colors)}${paletteStudioGroup("Night page", "These replace the page colors when View → Page → Night is active.", ["nightPaper", "nightInk", "nightMuted", "nightFaint"], colors)}${paletteStudioGroup("Writing room", "These paint the window, panes, dialogs, borders, and interface text.", ["bg", "bgSoft", "pane", "surface", "surfaceRaised", "uiText", "uiTextSoft", "muted", "line", "lineStrong"], colors)}${paletteStudioGroup("Signals & actions", "Shared colors for buttons, selection, flags, alerts, and resolved notes.", ["accent", "onAccent", "danger", "dangerMuted", "resolved"], colors)}`,
+    actions: `<input data-palette-name placeholder="Name this custom palette" maxlength="36"><button data-save-palette class="btn-gold">Save custom palette</button>`
+  });
+  ctx.own(bd);
+  bd.querySelector(".dialog-footer").classList.add("palette-studio-save");
   const preview = bd.querySelector(".palette-preview");
   let draftPalette = false;
   const picker = bd.querySelector("[data-studio-palette]");
@@ -47,7 +47,7 @@ function openPaletteStudio() {
   };
   const previewVars = () => {
     const get = (key) => bd.querySelector(`[data-palette-color="${key}"]`).value;
-    preview.style.setProperty("--preview-bg", get("bg")); preview.style.setProperty("--preview-pane", get("pane")); preview.style.setProperty("--preview-paper", get("paper")); preview.style.setProperty("--preview-ink", get("ink")); preview.style.setProperty("--preview-muted", get("paperMuted")); preview.style.setProperty("--preview-faint", get("paperFaint")); preview.style.setProperty("--preview-accent", get("accent")); preview.style.setProperty("--preview-on-accent", get("onAccent")); preview.style.setProperty("--preview-danger", get("danger"));
+    preview.style.setProperty("--preview-ui-text", get("uiText")); preview.style.setProperty("--preview-ui-soft", get("uiTextSoft")); preview.style.setProperty("--preview-bg", get("bg")); preview.style.setProperty("--preview-pane", get("pane")); preview.style.setProperty("--preview-paper", get("paper")); preview.style.setProperty("--preview-ink", get("ink")); preview.style.setProperty("--preview-muted", get("paperMuted")); preview.style.setProperty("--preview-faint", get("paperFaint")); preview.style.setProperty("--preview-accent", get("accent")); preview.style.setProperty("--preview-on-accent", get("onAccent")); preview.style.setProperty("--preview-danger", get("danger"));
   };
   bd.querySelectorAll("[data-palette-color]").forEach((input) => {
     input.oninput = () => {
@@ -136,7 +136,6 @@ function openPaletteStudio() {
     bd.querySelector("[data-palette-name]").value = "";
     toast(`Saved “${name}” for ${ctx.authorName}`);
   };
-  bd.addEventListener("keydown", (e) => { if (e.key === "Escape") { e.stopPropagation(); close(); } });
 }
 function applyPluginAppearance() {
   const author = ctx.settings;

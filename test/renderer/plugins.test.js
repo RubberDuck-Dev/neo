@@ -54,8 +54,11 @@ test("Git enablement migrates to library scope and disabling stops automatic bac
   const r = await openNeo({ lib: { authors: [{ id: "a1", name: "One", plugins: ["github"] }, { id: "a2", name: "Two" }], history: { enabled: true, git: { enabled: true, autoPush: true } } } });
   try {
     await r.menu({ type: "syncSettings" });
-    assert.equal(await r.page.locator("#sy-git-remote").count(), 1);
+    assert.equal(await r.page.locator("#sy-git-remote").count(), 0);
     await r.page.locator(".sync-settings-modal .m-cancel").first().click();
+    await r.page.evaluate(() => NeoPlugins.call("github", "configure"));
+    assert.equal(await r.page.locator("#sy-git-remote").count(), 1);
+    await r.page.locator(".github-settings-modal .m-ok").click();
     await r.page.evaluate(async () => { library.currentAuthorId = "a2"; await renderShelves(); });
     assert.equal(await r.page.evaluate(() => NeoPlugins.enabled("github")), true);
     await r.page.evaluate(() => NeoPlugins.setEnabled("github", false));
@@ -96,9 +99,9 @@ test("export language is independent of dictionary selection", async (t) => {
   try {
     await r.openBook();
     assert.equal(await r.page.evaluate(() => bookExportData().language), "en");
-    await r.menu({ type: "stats" });
+    await r.menu({ type: "bookSettings" });
     await r.page.fill("#st-language", "de");
-    await r.page.click(".stats-modal .m-ok");
+    await r.page.click(".settings-dialog .m-ok");
     assert.equal(await r.page.evaluate(() => bookExportData().language), "de");
     assert.equal(await r.page.evaluate(() => library.spellLanguage), "fr");
     assert.deepEqual(r.errors, []);

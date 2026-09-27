@@ -1192,11 +1192,12 @@ function buildMenu() {
           click: () => sendToWindow({ type: 'emailDraft' })
         },
         { label: 'Email Settings…', click: () => sendToWindow({ type: 'emailSettings' }) },
-        { label: 'Sync Settings…', click: () => sendToWindow({ type: 'syncSettings' }) },
+        { label: isMac ? 'Saving & Recovery…' : 'Saving && Recovery…', click: () => sendToWindow({ type: 'syncSettings' }) },
+        { label: 'Preferences…', accelerator: 'CmdOrCtrl+,', click: () => sendToWindow({ type: 'preferences' }) },
+        { label: 'Book Settings…', click: () => sendToWindow({ type: 'bookSettings' }) },
         { label: 'Cover Art…', click: () => sendToWindow({ type: 'coverArt' }) },
         {
-          label: isMac ? 'Progress & Settings…' : 'Progress && Settings…',
-          accelerator: 'CmdOrCtrl+,',
+          label: isMac ? 'Progress & Goals…' : 'Progress && Goals…',
           click: () => sendToWindow({ type: 'stats' })
         },
         { type: 'separator' },
@@ -1238,6 +1239,7 @@ function buildMenu() {
           accelerator: 'CmdOrCtrl+Shift+R',
           click: () => sendToWindow({ type: 'readAloud' })
         },
+        { label: 'Read Aloud Settings…', click: () => sendToWindow({ type: 'readAloudSettings' }) },
         {
           label: 'Spellcheck Language',
           submenu: Object.entries(SPELL_LANGUAGES).map(([code, lang]) => ({

@@ -155,6 +155,7 @@
   <script src="covers.js"></script>
   <!-- The renderer, in load order (classic scripts sharing one scope). -->
   <script src="renderer/00-core.js"></script>
+  <script src="renderer/features/settings-dialog.js"></script>
   <script src="renderer/01-bookshelf.js"></script>
   <script src="renderer/plugin-host/host.js"></script>
   <script src="renderer/plugin-host/catalog.js"></script>
@@ -176,6 +177,7 @@
   <script src="renderer/features/revision/english.js"></script>
   <script src="renderer/17-revision-pass.js"></script>
   <script src="renderer/18-read-aloud.js"></script>
+  <script src="renderer/features/preferences.js"></script>
   <script src="renderer/19-goals-settings.js"></script>
   <script src="renderer/20-cover-art.js"></script>
   <script src="renderer/21-sync-settings.js"></script>
@@ -237,7 +239,7 @@
       else if (e.shiftKey && k === 'KeyT') go({ type: 'typewriter' });
       else if (!e.shiftKey && k === 'Semicolon') go({ type: 'spellcheck' });
       else if (!e.shiftKey && k === 'KeyF') go({ type: 'find' });
-      else if (!e.shiftKey && k === 'Comma') go({ type: 'stats' });
+      else if (!e.shiftKey && k === 'Comma') go({ type: 'preferences' });
     });
     document.getElementById('paper-scroll').addEventListener('touchstart', (e) => {
       if (e.touches[0].clientX < EDGE || e.touches[0].clientX > window.innerWidth - EDGE) return;

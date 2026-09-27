@@ -21,8 +21,8 @@
 .palette-delete:hover { color: var(--danger); }
 .palette-preview { --preview-bg: var(--bg); --preview-pane: var(--pane); --preview-paper: var(--paper); --preview-ink: var(--ink); --preview-muted: var(--paper-muted); --preview-faint: var(--paper-faint); --preview-accent: var(--accent); --preview-on-accent: var(--on-accent); --preview-danger: var(--danger); display: grid; grid-template-columns: 118px 1fr; grid-template-rows: 28px 164px; overflow: hidden; border: 1px solid var(--line); border-radius: 8px; background: var(--preview-bg); margin-bottom: 18px; }
 .palette-preview-chrome { grid-column: 1 / -1; display: flex; justify-content: space-between; align-items: center; padding: 0 10px; color: var(--preview-accent); font-size: 10px; letter-spacing: 2px; }
-.palette-preview-pane { padding: 14px 11px; background: var(--preview-pane); color: var(--preview-muted); font-size: 10px; line-height: 2; }
-.palette-preview-pane strong { color: var(--preview-ink); font-weight: 500; }
+.palette-preview-pane { padding: 14px 11px; background: var(--preview-pane); color: var(--preview-ui-soft); font-size: 10px; line-height: 2; }
+.palette-preview-pane strong { color: var(--preview-ui-text); font-weight: 500; }
 .palette-preview-page { margin: 10px; padding: 15px; background: var(--preview-paper); color: var(--preview-ink); overflow: hidden; }
 .palette-preview-page small { color: var(--preview-muted); font-size: 8px; letter-spacing: 1px; }
 .palette-preview-page h3 { font: 700 17px Georgia, serif; margin: 6px 0; }

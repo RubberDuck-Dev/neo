@@ -173,9 +173,9 @@ function openPublishingDetails({ tab = "manuscript", exportAfter = false } = {})
   const bd = document.createElement("div");
   bd.className = "modal-backdrop pub-backdrop";
   bd.innerHTML = `
-    <div class="modal ms-modal pub-modal">
-      <div class="stats-modal-head"><h2 style="font-size:17px">Publishing details · ${escHtml(author.name || "Anonymous")}</h2><button class="m-cancel btn-quiet" title="Close">×</button></div>
-      <div class="pub-tabs" role="tablist">
+    <div class="modal ms-modal pub-modal settings-dialog">
+      <div class="stats-modal-head dialog-head"><div><h2>Publishing details</h2><p class="dialog-scope">This author · ${escHtml(author.name || "Anonymous")}</p></div><button class="m-cancel btn-quiet" title="Close">×</button></div>
+      <div class="dialog-body"><div class="pub-tabs" role="tablist">
         <button role="tab" data-tab="manuscript">Manuscript</button>
         <button role="tab" data-tab="matter">End matter</button>
       </div>
@@ -201,7 +201,7 @@ function openPublishingDetails({ tab = "manuscript", exportAfter = false } = {})
         ${book ? `<label class="sync-switch" style="margin-top:12px"><input type="checkbox" data-include ${book.endMatterOff ? "" : "checked"}/> <span>Include in “${escHtml(book.title || "Untitled")}”</span></label>` : ""}
       </section>
 
-      <div style="text-align:right;margin-top:14px"><button class="m-cancel btn-quiet">Cancel</button> <button class="m-ok btn-gold">${exportAfter ? "Save &amp; export manuscript" : "Save"}</button></div>
+      </div><div class="dialog-footer"><button class="m-cancel btn-quiet">Cancel</button> <button class="m-ok btn-gold">${exportAfter ? "Save &amp; export manuscript" : "Save"}</button></div>
     </div>`;
   document.body.appendChild(bd);
 

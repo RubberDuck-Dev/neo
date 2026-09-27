@@ -4,10 +4,10 @@
 /*  GOALS, SPRINTS, AND THE CHART                                      */
 /* ================================================================== */
 
-function goalPace(total = bookWordCount()) {
-  const goal = book.wordGoal || 0;
-  const due = book.goalDueDate
-    ? new Date(`${book.goalDueDate}T12:00:00`)
+function goalPace(total = bookWordCount(), subject = book) {
+  const goal = subject.wordGoal || 0;
+  const due = subject.goalDueDate
+    ? new Date(`${subject.goalDueDate}T12:00:00`)
     : null;
   if (!goal || !due || Number.isNaN(due.valueOf())) return null;
   const today = new Date();
@@ -28,19 +28,18 @@ function effectiveDailyTarget(total = bookWordCount()) {
   return pace ? pace.daily : library.dailyGoal || 0;
 }
 
-function statsChartSvg() {
+function statsChartSvg(subject = book, dailyTarget = effectiveDailyTarget()) {
   const W = 520, H = 170, PAD = 6;
   const days = [];
   for (let i = 29; i >= 0; i--) { const d = new Date(); d.setDate(d.getDate() - i); days.push(writingDay(d)); }
   const daily = days.map((d) => Math.max(0, dailyWords(d)));
   const cumulative = cumulativeWordSeries(days);
-  const goal = book.wordGoal || 0;
-  const mode = book.goalChartMode || "daily";
-  const dailyTarget = effectiveDailyTarget();
+  const goal = subject.wordGoal || 0;
+  const mode = subject.goalChartMode || "daily";
   const maxD = Math.max(...daily, dailyTarget, 1);
   let maxC = Math.max(...cumulative, goal, 1);
   const bw = (W - PAD * 2) / 30;
-  const due = book.goalDueDate ? new Date(`${book.goalDueDate}T12:00:00`) : null;
+  const due = subject.goalDueDate ? new Date(`${subject.goalDueDate}T12:00:00`) : null;
   const firstIndex = daily.findIndex((words) => words !== 0);
   const baseline = firstIndex >= 0 ? cumulative[firstIndex] - daily[firstIndex] : cumulative[0];
   const startDate = new Date(`${days[Math.max(0, firstIndex)]}T12:00:00`);
@@ -51,20 +50,20 @@ function statsChartSvg() {
   const bars = mode === "daily" ? daily.map((v, i) => {
     const h = Math.max(2, Math.round((v / maxD) * (mode === "daily" ? H - PAD * 2 - 20 : H * 0.45)));
     const label = new Date(`${days[i]}T12:00:00`).toLocaleDateString(undefined, { month: "short", day: "numeric" });
-    return `<rect class="stats-bar" x="${(PAD + i * bw).toFixed(1)}" y="${H - PAD - h}" width="${(bw - 2).toFixed(1)}" height="${h}" rx="1.5" fill="#3d5a4f" tabindex="0" data-label="${label}" data-words="${v.toLocaleString()}" aria-label="${label}: ${v.toLocaleString()} words"></rect>`;
+    return `<rect class="stats-bar" x="${(PAD + i * bw).toFixed(1)}" y="${H - PAD - h}" width="${(bw - 2).toFixed(1)}" height="${h}" rx="1.5" fill="var(--accent)" opacity="0.55" tabindex="0" data-label="${label}" data-words="${v.toLocaleString()}" aria-label="${label}: ${v.toLocaleString()} words"></rect>`;
   }).join("") : "";
   const line = mode === "cumulative" ? cumulative.map((v, i) => {
     const x = (PAD + i * bw + bw / 2).toFixed(1);
     const y = (H - PAD - (v / maxC) * (H - PAD * 2 - 20)).toFixed(1);
     return (i === 0 ? "M" : "L") + x + "," + y;
   }).join(" ") : "";
-  const paceLine = planned ? `<path d="${planned.map((v, i) => `${i === 0 ? "M" : "L"}${(PAD + i * bw + bw / 2).toFixed(1)},${(H - PAD - (v / maxC) * (H - PAD * 2 - 20)).toFixed(1)}`).join(" ")}" fill="none" stroke="#8d8778" stroke-dasharray="4,4" stroke-width="1.5"/>` : "";
+  const paceLine = planned ? `<path d="${planned.map((v, i) => `${i === 0 ? "M" : "L"}${(PAD + i * bw + bw / 2).toFixed(1)},${(H - PAD - (v / maxC) * (H - PAD * 2 - 20)).toFixed(1)}`).join(" ")}" fill="none" stroke="var(--muted)" stroke-dasharray="4,4" stroke-width="1.5"/>` : "";
   const goalLine = mode === "daily" && dailyTarget
-    ? `<line x1="${PAD}" x2="${W - PAD}" y1="${(H - PAD - (dailyTarget / maxD) * (H - PAD * 2 - 20)).toFixed(1)}" y2="${(H - PAD - (dailyTarget / maxD) * (H - PAD * 2 - 20)).toFixed(1)}" stroke="#c9a86a" stroke-dasharray="5,4" stroke-width="1.5"/>`
-    : mode === "cumulative" && goal ? `<line x1="${PAD}" x2="${W - PAD}" y1="${(H - PAD - (goal / maxC) * (H - PAD * 2 - 20)).toFixed(1)}" y2="${(H - PAD - (goal / maxC) * (H - PAD * 2 - 20)).toFixed(1)}" stroke="#c9a86a" stroke-dasharray="5,4" stroke-width="1.5"/>` : "";
-  const axisLabels = mode === "daily" ? `<text x="8" y="18" fill="#aaa" font-size="10">${maxD.toLocaleString()}</text><text x="8" y="${H - 10}" fill="#777" font-size="10">0</text>` : `<text x="8" y="18" fill="#aaa" font-size="10">${maxC.toLocaleString()}</text><text x="8" y="${H - 10}" fill="#777" font-size="10">0</text>`;
-  return `<svg id="stats-chart" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg">${axisLabels}${bars}<path d="${line}" fill="none" stroke="#c9a86a" stroke-width="2"/>${paceLine}${goalLine}<g class="chart-tooltip" hidden><rect rx="3" fill="#292722" stroke="#c9a86a" stroke-width="0.7"></rect><text fill="#eee" font-size="11" text-anchor="middle"></text></g></svg>
-  <div style="display:flex;justify-content:space-between;font-size:10px;color:#666;padding:2px 4px"><span>30 days ago</span><span style="color:#3d8a6a">▮ daily words</span><span style="color:var(--accent)">${mode === "daily" ? "- - daily target" : "— total · - - goal"}${planned ? " · pace" : ""}</span><span>today</span></div>`;
+    ? `<line x1="${PAD}" x2="${W - PAD}" y1="${(H - PAD - (dailyTarget / maxD) * (H - PAD * 2 - 20)).toFixed(1)}" y2="${(H - PAD - (dailyTarget / maxD) * (H - PAD * 2 - 20)).toFixed(1)}" stroke="var(--accent)" stroke-dasharray="5,4" stroke-width="1.5"/>`
+    : mode === "cumulative" && goal ? `<line x1="${PAD}" x2="${W - PAD}" y1="${(H - PAD - (goal / maxC) * (H - PAD * 2 - 20)).toFixed(1)}" y2="${(H - PAD - (goal / maxC) * (H - PAD * 2 - 20)).toFixed(1)}" stroke="var(--accent)" stroke-dasharray="5,4" stroke-width="1.5"/>` : "";
+  const axisLabels = mode === "daily" ? `<text x="8" y="18" fill="var(--ui-text-soft)" font-size="10">${maxD.toLocaleString()}</text><text x="8" y="${H - 10}" fill="var(--muted)" font-size="10">0</text>` : `<text x="8" y="18" fill="var(--ui-text-soft)" font-size="10">${maxC.toLocaleString()}</text><text x="8" y="${H - 10}" fill="var(--muted)" font-size="10">0</text>`;
+  return `<svg id="stats-chart" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg">${axisLabels}${bars}<path d="${line}" fill="none" stroke="var(--accent)" stroke-width="2"/>${paceLine}${goalLine}<g class="chart-tooltip" hidden><rect rx="3" fill="var(--surface-raised)" stroke="var(--accent)" stroke-width="0.7"></rect><text fill="var(--ui-text)" font-size="11" text-anchor="middle"></text></g></svg>
+  <div style="display:flex;justify-content:space-between;font-size:10px;color:var(--muted);padding:2px 4px"><span>30 days ago</span><span style="color:var(--accent)">▮ daily words</span><span style="color:var(--accent)">${mode === "daily" ? "- - daily target" : "— total · - - goal"}${planned ? " · pace" : ""}</span><span>today</span></div>`;
 }
 
 function bindStatsChart(root) {
@@ -84,22 +83,22 @@ function bindStatsChart(root) {
   svg.addEventListener("focusout", () => { tip.setAttribute("hidden", ""); });
 }
 
-function statsOverview() {
+function statsOverview(subject = book, dailyTarget = library.dailyGoal || 0) {
   const wordsToday = dailyWords(todayStr());
   const total = bookWordCount();
-  const pace = goalPace(total);
+  const pace = goalPace(total, subject);
   return `
     <div class="stats-nums">
       <div><div class="big">${total.toLocaleString()}</div><div class="lbl">total words</div></div>
       <div><div class="big">${wordsToday.toLocaleString()}</div><div class="lbl">today</div></div>
-      <div><div class="big">${book.wordGoal ? Math.min(100, Math.round((total / book.wordGoal) * 100)) + "%" : "—"}</div><div class="lbl">of manuscript goal</div></div>
+      <div><div class="big">${subject.wordGoal ? Math.min(100, Math.round((total / subject.wordGoal) * 100)) + "%" : "—"}</div><div class="lbl">of manuscript goal</div></div>
     </div>
     ${pace ? `<div class="stats-pace"><span class="pace-item"><strong>${pace.daily.toLocaleString()}</strong> / day</span><span class="pace-item"><strong>${pace.weekly.toLocaleString()}</strong> / week</span><span class="pace-item">to finish ${pace.remaining.toLocaleString()} words by ${pace.due.toLocaleDateString(undefined, { month: "short", day: "numeric" })}</span></div>` : ""}
-    ${statsChartSvg()}`;
+    ${statsChartSvg(subject, pace ? pace.daily : dailyTarget)}`;
 }
 
-function deadlinePaceText() {
-  const pace = goalPace();
+function deadlinePaceText(subject = book) {
+  const pace = goalPace(bookWordCount(), subject);
   return pace
     ? `Deadline pace: <strong>${pace.daily.toLocaleString()} words/day</strong> · ${pace.weekly.toLocaleString()} words/week`
     : "";
@@ -109,113 +108,51 @@ function deadlinePaceText() {
 
 function openStats() {
   const hasBook = !!book;
-  const bd = document.createElement("div");
-  bd.className = "modal-backdrop";
-  bd.innerHTML = `
-    <div class="modal stats-modal" style="width:600px">
-      <div class="stats-modal-head"><h2 style="font-size:17px">${hasBook ? escHtml(book.title) + " — progress" : "Writing settings"}</h2><button class="m-cancel btn-quiet" title="Close">×</button></div>
-      <div id="stats-overview">${hasBook ? statsOverview() : ""}</div>
-      <div class="stats-section">
-        <h3>${hasBook ? "Targets" : "Writing rhythm"}</h3>
-        ${hasBook ? `<div class="stats-target-toggle"><button data-chart-mode="daily" class="${(book.goalChartMode || "daily") === "daily" ? "active" : ""}">Daily words</button><button data-chart-mode="cumulative" class="${(book.goalChartMode || "daily") === "cumulative" ? "active" : ""}">Total words</button></div>` : ""}
-        <div class="stats-row">
-          <label>Daily target <input id="st-daily" type="number" min="0" value="${library.dailyGoal || ""}" placeholder="500"/></label>
-          ${hasBook ? `<label>Manuscript target <input id="st-book" type="number" min="0" value="${book.wordGoal || ""}" placeholder="80000"/></label><label>Deadline <input id="st-due" type="date" value="${book.goalDueDate || ""}"/></label>` : ""}
-        </div>
-        ${hasBook ? `<div id="deadline-pace" class="deadline-pace">${deadlinePaceText()}</div>` : ""}
-      </div>
-      <div class="stats-row stats-preferences">
-        <label>My writing day ends at
-          <select id="st-dayends">
-            ${[0, 1, 2, 3, 4, 5, 6].map((h) => `<option value="${h}"${(library.dayEndsAt || 0) === h ? " selected" : ""}>${h ? h + " am" : "midnight"}</option>`).join("")}
-          </select>
-        </label>
-      </div>
-      <div data-plugin-settings></div>
-      ${hasBook ? `<div class="stats-section"><label>Manuscript language <input id="st-language" value="${escHtml(NeoLanguage.manuscriptLanguage(book))}" placeholder="en, fr, de, zh-Hans"/></label><p class="soft">Used in exports. Dictionary and interface language are separate settings.</p></div>` : ""}
-      ${readAloudSettingsHtml()}
-      <div class="stats-section stats-writing-style">
-        <h3>New-book starting point</h3>
-        <div class="stats-style-choices" role="group" aria-label="New-book starting point">
-          <button type="button" data-writing-style="pantser" class="${library.writingStyle !== "plotter" ? "active" : ""}"><strong>Pantser</strong><span>Start on the blank page</span></button>
-          <button type="button" data-writing-style="plotter" class="${library.writingStyle === "plotter" ? "active" : ""}"><strong>Plotter</strong><span>Start in the outline</span></button>
-        </div>
-      </div>
-      <div style="text-align:right;margin-top:14px">
-        <button class="m-ok btn-gold">Done</button>
-      </div>
-    </div>`;
-  document.body.appendChild(bd);
-  if (hasBook) bindStatsChart(bd);
-  const finishReadAloudSettings = bindReadAloudSettings(bd);
-  const refreshStatsPreview = () => {
+  const target = book;
+  const draft = hasBook ? { ...book } : null;
+  let daily = library.dailyGoal || 0, saving = false;
+  const { bd, close } = settingsDialog({
+    title: 'Progress & goals', scope: hasBook ? `This book · ${book.title}` : 'Entire library', className: 'stats-modal', canClose: () => !saving,
+    content: `<div id="stats-overview">${hasBook ? statsOverview(draft, daily) : ''}</div>
+      <section class="stats-section"><h3>Targets</h3>
+      ${hasBook ? `<div class="stats-target-toggle"><button data-chart-mode="daily" class="${(draft.goalChartMode || 'daily') === 'daily' ? 'active' : ''}">Daily words</button><button data-chart-mode="cumulative" class="${draft.goalChartMode === 'cumulative' ? 'active' : ''}">Total words</button></div>` : ''}
+      <div class="stats-row"><label>Daily target · entire library<input id="st-daily" type="number" min="0" value="${daily || ''}" placeholder="500"/></label>
+      ${hasBook ? `<label>Manuscript target<input id="st-book" type="number" min="0" value="${draft.wordGoal || ''}" placeholder="80000"/></label><label>Deadline<input id="st-due" type="date" value="${draft.goalDueDate || ''}"/></label>` : ''}</div>
+      ${hasBook ? `<div id="deadline-pace" class="deadline-pace">${deadlinePaceText(draft)}</div>` : ''}</section>
+      <div data-plugin-settings></div><p class="dialog-error" role="status"></p>`,
+    actions: '<button class="m-cancel btn-quiet">Cancel</button><button class="m-ok btn-gold">Save goals</button>'
+  });
+  const preview = () => {
+    daily = Math.max(0, parseInt(bd.querySelector('#st-daily').value, 10) || 0);
     if (!hasBook) return;
-    library.dailyGoal = parseInt(bd.querySelector("#st-daily").value, 10) || 0;
-    book.wordGoal = parseInt(bd.querySelector("#st-book").value, 10) || 0;
-    book.goalDueDate = bd.querySelector("#st-due").value || "";
-    bd.querySelector("#stats-overview").innerHTML = statsOverview();
-    bd.querySelector("#deadline-pace").innerHTML = deadlinePaceText();
+    draft.wordGoal = Math.max(0, parseInt(bd.querySelector('#st-book').value, 10) || 0);
+    draft.goalDueDate = bd.querySelector('#st-due').value || '';
+    bd.querySelector('#stats-overview').innerHTML = statsOverview(draft, daily);
+    bd.querySelector('#deadline-pace').innerHTML = deadlinePaceText(draft);
     bindStatsChart(bd);
-    updateCounters();
   };
-  if (hasBook) ["#st-daily", "#st-book", "#st-due"].forEach((sel) => {
-    const input = bd.querySelector(sel);
-    input.addEventListener("input", refreshStatsPreview);
-    input.addEventListener("change", refreshStatsPreview);
+  bd.querySelectorAll('input').forEach(input => input.addEventListener('input', preview));
+  bd.querySelectorAll('[data-chart-mode]').forEach(button => {
+    button.onclick = () => { draft.goalChartMode = button.dataset.chartMode; bd.querySelectorAll('[data-chart-mode]').forEach(b => b.classList.toggle('active', b === button)); preview(); };
   });
-  const close = async () => {
-    if (hasBook) {
-      const language = bd.querySelector("#st-language").value.trim() || "en";
-      try { book.language = Intl.getCanonicalLocales(language)[0]; }
-      catch { toast("Use a language tag such as en, fr, or zh-Hans"); bd.querySelector("#st-language").focus(); return; }
-    }
-    finishReadAloudSettings();
-    library.dailyGoal = parseInt(bd.querySelector("#st-daily").value, 10) || 0;
-    setWritingDayEnd(parseInt(bd.querySelector("#st-dayends").value, 10) || 0);
-    if (hasBook) {
-      book.wordGoal = parseInt(bd.querySelector("#st-book").value, 10) || 0;
-      book.goalDueDate = bd.querySelector("#st-due").value || "";
-      book.goalChartMode = book.goalChartMode || "daily";
-      scheduleMetaSave();
-    }
-    await window.neo.writeLibrary(library);
-    bd.remove();
-    if (hasBook) updateCounters();
+  const save = async () => {
+    if (saving) return;
+    preview(); saving = true; bd.querySelector('.m-ok').disabled = true;
+    try {
+      await window.neo.writeLibrary({ ...library, dailyGoal: daily });
+      library.dailyGoal = daily;
+      if (hasBook) {
+        Object.assign(target, { wordGoal: draft.wordGoal, goalDueDate: draft.goalDueDate, goalChartMode: draft.goalChartMode || 'daily' });
+        scheduleMetaSave(); updateCounters();
+      }
+      saving = false; close();
+    } catch (err) { bd.querySelector('[role="status"]').textContent = ipcErrorText(err, 'Could not save goals').text; }
+    finally { saving = false; bd.querySelector('.m-ok').disabled = false; }
   };
-  bd.querySelector(".m-ok").onclick = close;
-  bd.querySelector(".m-cancel").onclick = close;
-  bd.addEventListener("keydown", (e) => {
-    if (e.key === "Escape") {
-      e.stopPropagation();
-      close();
-    }
-  });
-  bd.querySelector("#st-dayends").onchange = async () => {
-    setWritingDayEnd(parseInt(bd.querySelector("#st-dayends").value, 10) || 0);
-    await window.neo.writeLibrary(library);
-    if (hasBook) {
-      bd.querySelector("#stats-overview").innerHTML = statsOverview();
-      bindStatsChart(bd);
-      updateCounters();
-    }
-  };
-  if (hasBook) {
-    bd.querySelectorAll("[data-chart-mode]").forEach((btn) => {
-      btn.onclick = () => {
-        book.goalChartMode = btn.dataset.chartMode;
-        bd.querySelectorAll("[data-chart-mode]").forEach((b) => b.classList.toggle("active", b === btn));
-        bd.querySelector("#stats-overview").innerHTML = statsOverview();
-        bindStatsChart(bd);
-      };
-    });
-  }
-  NeoPlugins.notify("settings", bd, close);
-  bd.querySelectorAll("[data-writing-style]").forEach((choice) => {
-    choice.onclick = () => {
-      library.writingStyle = choice.dataset.writingStyle;
-      bd.querySelectorAll("[data-writing-style]").forEach((button) => button.classList.toggle("active", button === choice));
-    };
-  });
+  bd.querySelector('.m-ok').onclick = save;
+  bd.querySelector('.m-cancel').onclick = close;
+  if (hasBook) bindStatsChart(bd);
+  NeoPlugins.notify('settings', bd, save);
 }
 
-$("#goal-counter").onclick = openStats;
+$('#goal-counter').onclick = openStats;

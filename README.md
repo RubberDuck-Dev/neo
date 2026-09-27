@@ -33,7 +33,7 @@ When you're editing, not drafting: Edit → Revision Pass (⌘⇧;) marks echoes
 
 **Read aloud**
 
-Hearing your prose catches clunky rhythm and missing words that your eyes skip. Edit → Read Aloud (⌘⇧R) reads from the caret to the end of the chapter, or just the selection, in your computer's own voice, and lights up each sentence as it goes. Any key stops it. Pick the voice and speed in Progress & Settings (⌘,).
+Hearing your prose catches clunky rhythm and missing words that your eyes skip. Edit → Read Aloud (⌘⇧R) reads from the caret to the end of the chapter, or just the selection, in your computer's own voice, and lights up each sentence as it goes. Any key stops it. Pick the voice and speed in Edit → Read Aloud Settings.
 
 **Focus mode**
 
@@ -81,9 +81,9 @@ Continuous autosave, daily zip backups kept for two weeks, everything stored as 
 
 **Version history**
 
-Optional local checkpoints preserve complete book states while you write. Browse them from File → Sync Settings; Compare shows exactly what changed since any version, chapter by chapter, before you decide to restore it. Enable GitHub backup in ✦ Plugins, then use File → Sync Settings to connect an empty GitHub repository for the entire NEO Library. NEO creates its local history automatically, and you can opt into background GitHub backups after each version. NEO never creates a public repository. New computer? "Set up this computer from a GitHub backup…" in the same window downloads the library and picks up the backups where they left off; anything already on that computer is set aside, not deleted.
+Optional local checkpoints preserve complete book states while you write. Browse them from File → Saving & Recovery; Compare shows exactly what changed since any version, chapter by chapter, before you decide to restore it. Enable GitHub backup in ✦ Plugins, then open its backup settings to connect an empty GitHub repository for the entire NEO Library. NEO creates its local history automatically, and you can opt into background GitHub backups after each version. NEO never creates a public repository. New computer? "Set up this computer from a backup…" in GitHub backup settings downloads the library and picks up the backups where they left off; anything already on that computer is set aside, not deleted.
 
-Spellcheck uses bundled offline dictionaries, loaded only when needed. Choose a book’s manuscript language in Progress & Settings; it controls export metadata independently of the spellcheck dictionary. Revision Pass currently supports English manuscripts.
+Spellcheck uses bundled offline dictionaries, loaded only when needed. Choose a book’s manuscript language in File → Book Settings; it controls export metadata independently of the spellcheck dictionary. Revision Pass currently supports English manuscripts.
 
 ## Your files
 
