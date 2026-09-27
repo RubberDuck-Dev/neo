@@ -1234,8 +1234,14 @@ async function importFile(fp) {
   const mdTitleOf = (t) => t.replace(/^#{1,6}\s*/, '').trim();
   // A heading that is purely NEO's own numbering ("Chapter 2", "Prologue",
   // bare "7") carries no title — NEO numbers chapters itself.
+  // Chinese manuscripts mark chapters 第N章 / 第N回 …, or 序章 / 楔子 / 尾声 …
+  // (from hughhowey/neo#27 by jqlong17)
+  const isCjkHeading = (t) =>
+    (/^第[零〇一二三四五六七八九十百千万两0-9０-９]+[章节回部篇卷]/.test(t) && t.length < 40) ||
+    (/^(序章|序言|楔子|引子|前言|尾声|终章|后记|附录|番外)([：:\s].*)?$/.test(t) && t.length < 40);
   const isNumberedHeading = (t) => (
     (/^(chapter|prologue|epilogue|part)\b/i.test(t) && t.length < 60) ||
+    isCjkHeading(t.trim()) ||
     (numeralMode && isNumeralish(t))
   );
   const isHeading = (t) => t && (isMdHeading(t) || isNumberedHeading(t));
@@ -1244,6 +1250,9 @@ async function importFile(fp) {
   const titleOf = (t) => {
     if (isMdHeading(t)) t = mdTitleOf(t);
     t = t.replace(/\*\*([^*]+)\*\*/g, '$1').replace(/\*([^*]+)\*/g, '$1').replace(/_([^_]+)_/g, '$1');
+    // "第一章 风起" numbers the chapter and names it: keep the name
+    const cjkName = t.trim().match(/^第[零〇一二三四五六七八九十百千万两0-9０-９]+[章节回部篇卷][\s：:、．.·-]*(.+)$/);
+    if (cjkName) return cjkName[1].trim();
     return isNumberedHeading(t) ? '' : t;
   };
   const isBreak = (t) => /^\s*([*#•~⁂—–-]\s*){1,7}$/.test(t || '');
@@ -1270,8 +1279,14 @@ async function importFile(fp) {
     return chapters;
   };
 
+  const CJK_CHAR = /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}]/gu;
+  const countText = (t) => {
+    const cjk = t.match(CJK_CHAR);
+    const rest = t.replace(CJK_CHAR, ' ').trim();
+    return (cjk ? cjk.length : 0) + (rest ? rest.split(/\s+/).length : 0);
+  };
   const countAllWords = (list) =>
-    list.reduce((n, ch) => n + ch.paras.reduce((m, p) => m + (p.text ? p.text.trim().split(/\s+/).length : 0), 0), 0);
+    list.reduce((n, ch) => n + ch.paras.reduce((m, p) => m + (p.text ? countText(p.text) : 0), 0), 0);
 
   // First pass trusts page breaks. Some word processors sprinkle page-break
   // formatting on every paragraph, exploding a story into confetti — if the
@@ -1286,13 +1301,13 @@ async function importFile(fp) {
   // title page, not in the body. Detect, harvest, and remove them.
   let title = null;
   let author = null;
-  const norm = (s) => s.toLowerCase().replace(/[^a-z0-9]/g, '');
+  const norm = (s) => s.toLowerCase().replace(/[^\p{L}\p{N}]/gu, ''); // any script, not just a–z
   const first = chapters[0];
   if (first && first.paras.length) {
     const t0 = (first.paras[0].text || '').trim();
     const t1 = first.paras.length > 1 ? (first.paras[1].text || '').trim() : '';
     const titleish = t0 && t0.length < 90 && !/[.!?]$/.test(t0) && (
-      (norm(t0).length > 3 && norm(name).includes(norm(t0))) ||
+      ((norm(t0).length > 3 || (/[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}]/u.test(t0) && norm(t0).length >= 2)) && norm(name).includes(norm(t0))) ||
       /^by\s+\S/i.test(t1) ||
       (t0 === t0.toUpperCase() && /[A-Z].*[A-Z]/.test(t0) && t0.length < 60)
     );

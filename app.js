@@ -128,7 +128,18 @@ function toast(msg, ms = 4000) {
   }, ms);
 }
 
-const countWords = (text) => (text.trim().match(/\S+/g) || []).length;
+// Words, the way each script counts them: Chinese and Japanese characters
+// count one each (those scripts don't put spaces between words); everything
+// else counts by whitespace-separated runs, as before.
+// (CJK counting adapted from hughhowey/neo#27 by jqlong17.)
+const CJK_CHAR = /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}]/gu;
+const countWords = (text) => {
+  const s = String(text || "");
+  const cjk = s.match(CJK_CHAR);
+  if (!cjk) return (s.trim().match(/\S+/g) || []).length;
+  const rest = s.replace(CJK_CHAR, " ").replace(/[\s\p{P}\p{S}]+/gu, " ").trim();
+  return cjk.length + (rest ? rest.split(" ").length : 0);
+};
 
 function cleanChapterEl(id) {
   const el = document.querySelector(`.chapter[data-id="${id}"] .chapter-body`);
@@ -7539,7 +7550,7 @@ function buildDocxEntries(data) {
 // close. Contact details stay on this computer (see library.backup.json).
 
 function manuscriptWordCount(d) {
-  const words = d.sections.reduce((n, ch) => n + ch.paras.reduce((m, p) => m + (p.sceneBreak ? 0 : (p.text.match(/\S+/g) || []).length), 0), 0);
+  const words = d.sections.reduce((n, ch) => n + ch.paras.reduce((m, p) => m + (p.sceneBreak ? 0 : countWords(p.text)), 0), 0);
   if (words >= 20000) return { words, label: `about ${(Math.round(words / 1000) * 1000).toLocaleString("en-US")} words` };
   return { words, label: `about ${Math.max(100, Math.round(words / 100) * 100).toLocaleString("en-US")} words` };
 }
