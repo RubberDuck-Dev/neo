@@ -2,7 +2,7 @@
 // Owns the window and all file-system access. The renderer talks to this
 // through the IPC handlers below (see preload.js for the exposed API).
 
-const { app, BrowserWindow, ipcMain, dialog, Menu, MenuItem } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, Menu, MenuItem, utilityProcess } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
@@ -22,24 +22,21 @@ app.commandLine.appendSwitch('blink-settings', 'smartInsertDeleteEnabled=false')
 let LIBRARY_DIR = path.join(os.homedir(), 'Documents', 'NEO Library');
 let LIBRARY_FILE = path.join(LIBRARY_DIR, 'library.json');
 
-// Where the library lives can be chosen (File → Library Location…). The
-// choice is an app preference in userData, never inside the library itself.
+// Where the library lives can be chosen (File → Library Folder…). The
+// choice is an app setting in userData (settings.json, shared with upstream
+// NEO's libraryDir), never inside the library itself.
 function setLibraryPath(dir) {
   LIBRARY_DIR = path.resolve(dir);
   LIBRARY_FILE = path.join(LIBRARY_DIR, 'library.json');
 }
 
-function preferencesFile() {
-  return path.join(app.getPath('userData'), 'preferences.json');
+function settingsPath() { return path.join(app.getPath('userData'), 'settings.json'); }
+function readSettings() {
+  try { return JSON.parse(fs.readFileSync(settingsPath(), 'utf8')); } catch { return {}; }
 }
-
-function readPreferences() {
-  return readJSON(preferencesFile(), {});
-}
-
-function writePreferences(prefs) {
-  fs.mkdirSync(path.dirname(preferencesFile()), { recursive: true });
-  writeJSON(preferencesFile(), prefs);
+function writeSettings(obj) {
+  fs.mkdirSync(path.dirname(settingsPath()), { recursive: true });
+  writeJSON(settingsPath(), obj);
 }
 
 function validLibrary(dir) {
@@ -48,17 +45,29 @@ function validLibrary(dir) {
   return !!data && typeof data === 'object' && Array.isArray(data.shelves);
 }
 
+function emptyDir(dir) {
+  try { return fs.statSync(dir).isDirectory() && fs.readdirSync(dir).filter((n) => n !== '.DS_Store').length === 0; } catch { return false; }
+}
+
 // Returns the configured path when it can't be used this session (a sync
 // folder or external drive that isn't mounted), so the writer can be told.
 // A fresh library is never created at a configured path that has vanished.
 function resolveLibraryAtStartup() {
   const defaultDir = path.join(app.getPath('documents'), 'NEO Library');
-  const prefs = readPreferences();
-  const configured = typeof prefs.libraryPath === 'string' && prefs.libraryPath.trim()
-    ? path.resolve(prefs.libraryPath)
+  const settings = readSettings();
+  // earlier fork builds kept the choice in preferences.json as libraryPath
+  if (!settings.libraryDir) {
+    const legacy = readJSON(path.join(app.getPath('userData'), 'preferences.json'), {}).libraryPath;
+    if (typeof legacy === 'string' && legacy.trim()) {
+      settings.libraryDir = legacy;
+      try { writeSettings(settings); } catch (err) { logError('settings-migrate', err); }
+    }
+  }
+  const configured = typeof settings.libraryDir === 'string' && settings.libraryDir.trim()
+    ? path.resolve(settings.libraryDir)
     : null;
   if (!configured) { setLibraryPath(defaultDir); return null; }
-  if (validLibrary(configured)) { setLibraryPath(configured); return null; }
+  if (validLibrary(configured) || emptyDir(configured)) { setLibraryPath(configured); return null; }
   setLibraryPath(defaultDir);
   return configured;
 }
@@ -1153,6 +1162,46 @@ const decodeEntities = (s) => s
   .replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>')
   .replace(/&quot;/g, '"').replace(/&apos;/g, "'");
 
+// Check if a formatting tag (<w:b>, <w:i>) is actually ON
+function docxFormatOn(rpr, tag) {
+  const hit = rpr.match(new RegExp('<' + tag + '(?:\\s[^>]*)?/?>'));
+  if (!hit) return false;
+  const val = (hit[0].match(/w:val="([^"]*)"/) || [])[1];
+  return val === undefined || /^(true|1|on)$/i.test(val);
+}
+
+// Convert one Word paragraph's bold/italic XML into markdown text with bold/italic
+function docxParagraphToMarkdown(p) {
+  const pageBreak = /<w:br [^>]*w:type="page"/.test(p) || /<w:pageBreakBefore/.test(p);
+  // Word marks headings with a paragraph style such as <w:pStyle w:val="Heading1"/>.
+  // Any heading style (Heading1..9, or bare "Heading") starts a new chapter and
+  // gives it its title — regardless of locale, the underlying style id is
+  // always "Heading*".
+  const pStyle = (p.match(/<w:pStyle\s+w:val="([^"]*)"/) || [])[1] || '';
+  const heading = /^heading\d*$/i.test(pStyle);
+  const runs = [...p.matchAll(/<w:r[ >][\s\S]*?<\/w:r>/g)].map((rm) => {
+    const r = rm[0];
+    const rpr = (r.match(/<w:rPr>[\s\S]*?<\/w:rPr>/) || [''])[0];
+    const text = [...r.matchAll(/<w:t(?:\s[^>]*)?>([\s\S]*?)<\/w:t>/g)]
+      .map((t) => decodeEntities(t[1])).join('');
+    return { text, bold: docxFormatOn(rpr, 'w:b'), italic: docxFormatOn(rpr, 'w:i') };
+  });
+  // make sure **one**"+"**two**" becomes one "**onetwo**", not "**one****two**"
+  const merged = [];
+  for (const run of runs) {
+    const last = merged[merged.length - 1];
+    if (last && last.bold === run.bold && last.italic === run.italic) last.text += run.text;
+    else merged.push({ ...run });
+  }
+  const text = merged.map((run) => {
+    let t = run.text;
+    if (run.bold) t = '**' + t + '**';
+    if (run.italic) t = '*' + t + '*';
+    return t;
+  }).join('').trim();
+  return { text, pageBreak, heading };
+}
+
 async function importFile(fp) {
   const name = path.basename(fp).replace(/\.[^.]+$/, '');
   const ext = path.extname(fp).toLowerCase();
@@ -1164,16 +1213,8 @@ async function importFile(fp) {
     const docFile = zip.file('word/document.xml');
     if (!docFile) throw new Error('Not a valid .docx: ' + fp);
     const xml = await docFile.async('string');
-    paras = [...xml.matchAll(/<w:p[ >][\s\S]*?<\/w:p>/g)].map((m) => {
-      const p = m[0];
-      // <w:t> or <w:t attr...> ONLY — never <w:tab>/<w:tabs>, which share
-      // the same first letters and once leaked raw XML into a manuscript
-      const text = [...p.matchAll(/<w:t(?:\s[^>]*)?>([\s\S]*?)<\/w:t>/g)]
-        .map((t) => decodeEntities(t[1])).join('');
-      const pageBreak = /<w:br [^>]*w:type="page"/.test(p) || /<w:pageBreakBefore/.test(p);
-      return { text: text.trim(), pageBreak };
-    });
-  } else {
+    paras = [...xml.matchAll(/<w:p[ >][\s\S]*?<\/w:p>/g)]
+      .map((m) => docxParagraphToMarkdown(m[0]));  } else {
     const raw = fs.readFileSync(fp, 'utf8');
     paras = raw.split(/\r?\n\s*\r?\n/)
       .map((b) => ({ text: b.replace(/\s*\r?\n\s*/g, ' ').trim(), pageBreak: false }))
@@ -1188,32 +1229,49 @@ async function importFile(fp) {
   // Bare numbers only count as chapter markers when there's a ladder of them —
   // a story that merely OPENS with "Seven." keeps its seven.
   const numeralMode = paras.filter((p) => p.text && isNumeralish(p.text.trim())).length >= 2;
-  const isHeading = (t) => t && (
+  // A markdown heading: one or more "#" then text — any "size" (depth) counts.
+  const isMdHeading = (t) => /^#{1,6}\s+\S/.test(t);
+  const mdTitleOf = (t) => t.replace(/^#{1,6}\s*/, '').trim();
+  // A heading that is purely NEO's own numbering ("Chapter 2", "Prologue",
+  // bare "7") carries no title — NEO numbers chapters itself.
+  const isNumberedHeading = (t) => (
     (/^(chapter|prologue|epilogue|part)\b/i.test(t) && t.length < 60) ||
     (numeralMode && isNumeralish(t))
   );
+  const isHeading = (t) => t && (isMdHeading(t) || isNumberedHeading(t));
+  // The chapter title that a heading contributes. Markdown hashes and any
+  // emphasis markers are stripped, and pure numbering yields no title.
+  const titleOf = (t) => {
+    if (isMdHeading(t)) t = mdTitleOf(t);
+    t = t.replace(/\*\*([^*]+)\*\*/g, '$1').replace(/\*([^*]+)\*/g, '$1').replace(/_([^_]+)_/g, '$1');
+    return isNumberedHeading(t) ? '' : t;
+  };
   const isBreak = (t) => /^\s*([*#•~⁂—–-]\s*){1,7}$/.test(t || '');
 
   const chapterize = (usePageBreaks) => {
     const chapters = [];
     let cur = [];
+    let curTitle = '';
+    const close = () => {
+      if (cur.length) chapters.push({ title: curTitle, paras: cur });
+      cur = [];
+      curTitle = '';
+    };
     for (const p of paras) {
       const brk = usePageBreaks && p.pageBreak;
-      if (!p.text && !brk) continue;
-      if ((brk || isHeading(p.text)) && cur.length) {
-        chapters.push(cur);
-        cur = [];
-      }
-      if (isHeading(p.text)) continue; // the heading line itself is replaced by NEO's numbering
+      if (!p.text && !brk && !p.heading) continue;
+      const isH = p.heading || isHeading(p.text);
+      if (brk || isH) close();
+      if (isH) { curTitle = titleOf(p.text || ''); continue; } // the heading line is replaced by NEO's numbering
       if (isBreak(p.text)) { cur.push({ scene: true }); continue; }
       if (p.text) cur.push({ text: p.text });
     }
-    if (cur.length) chapters.push(cur);
+    close();
     return chapters;
   };
 
   const countAllWords = (list) =>
-    list.reduce((n, ch) => n + ch.reduce((m, p) => m + (p.text ? p.text.trim().split(/\s+/).length : 0), 0), 0);
+    list.reduce((n, ch) => n + ch.paras.reduce((m, p) => m + (p.text ? p.text.trim().split(/\s+/).length : 0), 0), 0);
 
   // First pass trusts page breaks. Some word processors sprinkle page-break
   // formatting on every paragraph, exploding a story into confetti — if the
@@ -1222,7 +1280,7 @@ async function importFile(fp) {
   if (chapters.length > 6 && countAllWords(chapters) / chapters.length < 250) {
     chapters = chapterize(false);
   }
-  if (!chapters.length) chapters.push([{ text: '' }]);
+  if (!chapters.length) chapters.push({ title: '', paras: [{ text: '' }] });
 
   // Front matter: a short title line and a "by Author" line belong on the
   // title page, not in the body. Detect, harvest, and remove them.
@@ -1230,9 +1288,9 @@ async function importFile(fp) {
   let author = null;
   const norm = (s) => s.toLowerCase().replace(/[^a-z0-9]/g, '');
   const first = chapters[0];
-  if (first && first.length) {
-    const t0 = (first[0].text || '').trim();
-    const t1 = first.length > 1 ? (first[1].text || '').trim() : '';
+  if (first && first.paras.length) {
+    const t0 = (first.paras[0].text || '').trim();
+    const t1 = first.paras.length > 1 ? (first.paras[1].text || '').trim() : '';
     const titleish = t0 && t0.length < 90 && !/[.!?]$/.test(t0) && (
       (norm(t0).length > 3 && norm(name).includes(norm(t0))) ||
       /^by\s+\S/i.test(t1) ||
@@ -1240,15 +1298,15 @@ async function importFile(fp) {
     );
     if (titleish) {
       title = t0;
-      first.shift();
+      first.paras.shift();
     }
-    const bl = first.length ? (first[0].text || '').trim().match(/^by\s+(.{2,60})$/i) : null;
+    const bl = first.paras.length ? (first.paras[0].text || '').trim().match(/^by\s+(.{2,60})$/i) : null;
     if (bl) {
       author = bl[1].trim();
-      first.shift();
+      first.paras.shift();
     }
-    if (!first.length) chapters.shift();
-    if (!chapters.length) chapters.push([{ text: '' }]);
+    if (!first.paras.length) chapters.shift();
+    if (!chapters.length) chapters.push({ title: '', paras: [{ text: '' }] });
   }
 
   return { name, title, author, chapters };
@@ -1369,24 +1427,50 @@ function libraryTargetForSelection(selected) {
 }
 
 async function switchLibraryTo(target) {
-  const prefs = readPreferences();
-  prefs.libraryPath = target;
-  writePreferences(prefs);
+  const settings = readSettings();
+  const defaultDir = path.join(app.getPath('documents'), 'NEO Library');
+  if (samePath(target, defaultDir) || path.resolve(target) === path.resolve(defaultDir)) delete settings.libraryDir;
+  else settings.libraryDir = target;
+  delete settings.libraryPath;
+  writeSettings(settings);
   setLibraryPath(target);
+  try { initSpell(); } catch (err) { logError('spell', err); } // the new library's language and words
   for (const w of BrowserWindow.getAllWindows()) w.reload();
 }
 
-async function changeLibraryLocation() {
+// File → Library Folder… (upstream's menu item, with this fork's safe move:
+// NEO copies the library to the new place and leaves the original intact).
+async function chooseLibraryFolder() {
   const win = BrowserWindow.getFocusedWindow() || BrowserWindow.getAllWindows()[0];
-  const { canceled, filePaths } = await dialog.showOpenDialog(win, {
-    title: 'Choose where NEO keeps your library',
-    defaultPath: path.dirname(LIBRARY_DIR),
-    properties: ['openDirectory', 'createDirectory']
+  const defaultDir = path.join(app.getPath('documents'), 'NEO Library');
+  const custom = path.resolve(LIBRARY_DIR) !== path.resolve(defaultDir);
+  const ask = await dialog.showMessageBox(win, {
+    type: 'question',
+    message: 'Library folder',
+    detail: `Your books live in:\n${LIBRARY_DIR}\n\nChoose another place and NEO copies your library there (or opens the NEO library already in it). The original stays where it is.`,
+    buttons: custom ? ['Choose Folder…', 'Use Default Folder', 'Cancel'] : ['Choose Folder…', 'Cancel'],
+    defaultId: 0,
+    cancelId: custom ? 2 : 1
   });
-  if (canceled || !filePaths.length) return;
+  if (ask.response === 0) return changeLibraryLocation();
+  if (custom && ask.response === 1) return changeLibraryLocation(defaultDir);
+}
+
+async function changeLibraryLocation(chosenTarget = null) {
+  const win = BrowserWindow.getFocusedWindow() || BrowserWindow.getAllWindows()[0];
+  let picked = chosenTarget;
+  if (!picked) {
+    const { canceled, filePaths } = await dialog.showOpenDialog(win, {
+      title: 'Choose where NEO keeps your library',
+      defaultPath: path.dirname(LIBRARY_DIR),
+      properties: ['openDirectory', 'createDirectory']
+    });
+    if (canceled || !filePaths.length) return;
+    picked = libraryTargetForSelection(filePaths[0]);
+  }
 
   const oldLibrary = path.resolve(LIBRARY_DIR);
-  const target = path.resolve(libraryTargetForSelection(filePaths[0]));
+  const target = path.resolve(picked);
   if (samePath(target, oldLibrary) || target === oldLibrary) {
     await dialog.showMessageBox(win, { type: 'info', message: 'NEO is already using this library.', detail: oldLibrary });
     return;
@@ -1623,38 +1707,100 @@ ipcMain.on('save:flushComplete', (event) => {
 });
 
 // ---------------------------------------------------------------------------
-// Spellcheck: NEO's own dictionary (Hunspell en-US via nspell), identical on
-// every platform. The renderer paints the squiggles and asks for suggestions.
+// Spellcheck: NEO's own bundled Hunspell dictionaries via nspell, identical
+// on every platform. The renderer paints the squiggles and asks for
+// suggestions. Edit → Spellcheck Language picks the dictionary; the choice
+// lives in library.json so it travels with the writer's books.
+// (Languages beyond US English: idea and dictionary set from Zaim Halili.)
 // ---------------------------------------------------------------------------
-let neoSpell = null;
+let spellLanguage = 'en-US';
+const SPELL_LANGUAGES = {
+  'en-US': { label: 'English (US)', pkg: 'dictionary-en-us' },
+  'en-GB': { label: 'English (UK)', pkg: 'dictionary-en-gb' },
+  'en-CA': { label: 'English (Canada)', pkg: 'dictionary-en-ca' },
+  'en-AU': { label: 'English (Australia)', pkg: 'dictionary-en-au' },
+  'fr': { label: 'French', pkg: 'dictionary-fr' },
+  'es': { label: 'Spanish', pkg: 'dictionary-es' },
+  'de': { label: 'German', pkg: 'dictionary-de' }
+};
 
-function initSpell() {
+// The dictionary work runs in a helper process (spell-worker.js): parsing
+// French takes seconds, and the writing room must never wait for it.
+let spellChild = null;
+let spellSeq = 0;
+const spellWaiting = new Map();
+
+function spellRequest(msg) {
+  return new Promise((resolve) => {
+    if (!spellChild) { resolve({ ok: false, error: 'no spell process' }); return; }
+    const id = ++spellSeq;
+    spellWaiting.set(id, resolve);
+    spellChild.postMessage({ ...msg, id });
+  });
+}
+
+function startSpellProcess() {
+  if (spellChild) return;
   try {
-    const nspell = require('nspell');
-    require('dictionary-en-us')((err, dict) => {
-      if (err) { logError('spell', err); return; }
-      neoSpell = nspell(dict);
-      try {
-        const lib = readJSON(LIBRARY_FILE, {});
-        for (const w of lib.customWords || []) neoSpell.add(w);
-      } catch { /* custom words are a nicety */ }
+    spellChild = utilityProcess.fork(path.join(__dirname, 'spell-worker.js'), [], { serviceName: 'NEO spellcheck' });
+    spellChild.on('message', (m) => {
+      const done = spellWaiting.get(m.id);
+      if (done) { spellWaiting.delete(m.id); done(m); }
+    });
+    spellChild.on('exit', () => {
+      spellChild = null;
+      for (const done of spellWaiting.values()) done({ ok: false, error: 'spell process exited' });
+      spellWaiting.clear();
     });
   } catch (err) {
     logError('spell', err);
+    spellChild = null;
   }
 }
 
-ipcMain.handle('spell:check', (_e, words) => {
+// The dictionary packages differ in how they export (callback, ES module),
+// so the helper reads their .aff/.dic files directly — the one shape they
+// all share. (Not require.resolve: the newer packages seal package.json.)
+async function loadSpellDictionary(code) {
+  const known = SPELL_LANGUAGES[code] ? code : 'en-US';
+  const entry = SPELL_LANGUAGES[known];
+  startSpellProcess();
+  let custom = [];
+  try { custom = readJSON(LIBRARY_FILE, {}).customWords || []; } catch { /* a nicety */ }
+  const res = await spellRequest({ type: 'load', dir: path.join(__dirname, 'node_modules', entry.pkg), custom });
+  if (!res.ok) { logError('spell', new Error(res.error || 'dictionary failed to load')); return false; }
+  spellLanguage = known;
+  return true;
+}
+
+function initSpell() {
+  let code = 'en-US';
+  try { code = readJSON(LIBRARY_FILE, {}).spellLanguage || 'en-US'; } catch { /* fresh library */ }
+  loadSpellDictionary(code);
+}
+
+ipcMain.handle('spell:setLanguage', async (_e, code) => {
+  if (!SPELL_LANGUAGES[code]) return false;
+  const ok = await loadSpellDictionary(code);
+  if (ok) { try { buildMenu(); } catch (err) { logError('menu', err); } }
+  return ok;
+});
+
+ipcMain.handle('spell:check', async (_e, words) => {
+  const res = await spellRequest({ type: 'check', words });
+  if (res.ok) return res.result;
   const out = {};
-  // dictionary still loading: report everything correct rather than crying wolf
-  for (const w of words) out[w] = neoSpell ? neoSpell.correct(w) : true;
+  for (const w of words) out[w] = true; // no checker: nothing is wrong
   return out;
 });
 
-ipcMain.handle('spell:suggest', (_e, word) => (neoSpell ? neoSpell.suggest(word).slice(0, 6) : []));
+ipcMain.handle('spell:suggest', async (_e, word) => {
+  const res = await spellRequest({ type: 'suggest', word });
+  return res.ok ? res.result : [];
+});
 
-ipcMain.handle('spell:learn', (_e, word) => {
-  if (neoSpell && typeof word === 'string') neoSpell.add(word);
+ipcMain.handle('spell:learn', async (_e, word) => {
+  if (typeof word === 'string') await spellRequest({ type: 'add', word });
   return true;
 });
 
@@ -1677,9 +1823,15 @@ ipcMain.on('poetry:state', (_e, on) => {
 
 function buildMenu() {
   const isMac = process.platform === 'darwin';
+  const isWin = process.platform === 'win32';
+  // macOS and Windows name faces that ship with the OS. Linux has none of
+  // them, so the menu names the faces bundled in fonts/ (see styles.css).
+  // The Windows list stays the one the renderer already understands.
   const bodyFonts = isMac
     ? ['Georgia', 'Palatino', 'Baskerville', 'Hoefler Text', 'Iowan Old Style']
-    : ['Georgia', 'Palatino', 'Baskerville', 'Cambria', 'Constantia'];
+    : isWin
+      ? ['Georgia', 'Palatino', 'Baskerville', 'Cambria', 'Constantia']
+      : ['Gelasio', 'TeX Gyre Pagella', 'Libre Baskerville', 'Alegreya', 'Source Serif Pro'];
   const template = [
     // appMenu exists only on macOS — including it on Windows throws,
     // which is exactly what kept NEO from ever opening a window there
@@ -1714,13 +1866,13 @@ function buildMenu() {
           accelerator: 'CmdOrCtrl+,',
           click: () => sendToWindow({ type: 'stats' })
         },
-        { label: 'Library Location…', click: () => changeLibraryLocation() },
         { type: 'separator' },
         {
           label: 'Import Manuscripts…',
           accelerator: 'CmdOrCtrl+Shift+I',
           click: () => sendToWindow({ type: 'import' })
         },
+        { label: 'Library Folder…', click: () => { chooseLibraryFolder().catch((err) => logError('library folder', err)); } },
         { type: 'separator' },
         ...(isMac ? [{ role: 'close' }] : [{ role: 'quit' }])
       ]
@@ -1752,6 +1904,15 @@ function buildMenu() {
           label: 'Read Aloud',
           accelerator: 'CmdOrCtrl+Shift+R',
           click: () => sendToWindow({ type: 'readAloud' })
+        },
+        {
+          label: 'Spellcheck Language',
+          submenu: Object.entries(SPELL_LANGUAGES).map(([code, lang]) => ({
+            label: lang.label,
+            type: 'radio',
+            checked: spellLanguage === code,
+            click: () => sendToWindow({ type: 'spellLanguage', value: code })
+          }))
         }
       ]
     },

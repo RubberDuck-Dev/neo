@@ -51,6 +51,7 @@ contextBridge.exposeInMainWorld('neo', {
   spellCheckWords: (words) => ipcRenderer.invoke('spell:check', words),
   spellSuggest: (word) => ipcRenderer.invoke('spell:suggest', word),
   spellLearn: (word) => ipcRenderer.invoke('spell:learn', word),
+  setSpellLanguage: (code) => ipcRenderer.invoke('spell:setLanguage', code),
   appVersion: () => ipcRenderer.invoke('app:version'),
   openRelease: () => ipcRenderer.invoke('update:openRelease'),
 

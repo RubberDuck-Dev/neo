@@ -1,7 +1,7 @@
 {
   "name": "neo",
   "productName": "NEO",
-  "version": "0.8.0",
+  "version": "0.8.1",
   "description": "A word processor for authors. Distraction-free by default.",
   "homepage": "https://github.com/hughhowey/neo",
   "main": "main.js",
@@ -102,7 +102,13 @@
     "electronmon": "^2.0.4"
   },
   "dependencies": {
+    "dictionary-de": "^3.0.0",
+    "dictionary-en-au": "^3.0.0",
+    "dictionary-en-ca": "^3.0.0",
+    "dictionary-en-gb": "^3.0.0",
     "dictionary-en-us": "^2.2.1",
+    "dictionary-es": "^4.0.0",
+    "dictionary-fr": "^3.0.0",
     "electron-updater": "^6.3.9",
     "jszip": "^3.10.1",
     "nspell": "^2.1.5"

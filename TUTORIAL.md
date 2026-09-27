@@ -31,6 +31,10 @@ Type two hyphens and get an em dash — like that. The change happens immediatel
 
 Note: **there is no spellcheck while you write.** No red squiggles yelling WRONG at you while you're mid-thought about a made-up city with a made-up name. Your creative brain doesn't need a klaxon. When you're ready to check spelling, hit ⌘; and it'll turn on. Right-click the squiggles for suggestions. Hit ⌘; again to get back into the flow.
 
+**Poetry Paragraph**
+
+A new feature added in v0.8.0: the "Poetry Paragraph." If you SHIFT + ENTER, you'll get an indented paragraph style, default italicized (but you can change it with CTRL + I). It lets you put quotes, poetry, alien chatter, spells being cast, etc. in your manuscript. You can even put a Poetry Paragraph BEFORE the start of a chapter. Just hit SHIFT + ENTER from the chapter title. Or toggle any paragraph to a Poetry Paragraph in the Format menu.
+
 **When you need to mark a spot and keep moving**
 
 I used to type XXX in drafts when I needed to change something later (or look something up, or verify some continuity). Now, you can just hit ⌘⇧X instead. NEO drops a little mark, makes a sticky note in the margin for later, and you keep writing. The chapter list shows a red dot everywhere you left a sticky. The notes are on the hidden right panel any time you need to look for something to fix.
