@@ -4016,6 +4016,40 @@ function outlineLine(kind, chId, secId, index, label, text) {
   });
 
   line.appendChild(num);
+  if (kind === "chapter") {
+    // A chapter line carries its title above the note: the same title the
+    // manuscript heading shows (a safer take on hughhowey/neo#22 — titles
+    // and outline notes stay separate things, and edits flow both ways).
+    const col = document.createElement("div");
+    col.className = "ol-col";
+    const title = document.createElement("div");
+    title.className = "ol-title";
+    title.contentEditable = "true";
+    title.spellcheck = false;
+    title.textContent = (book.chapterTitles || {})[chId] || "";
+    title.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" || (e.key === "ArrowDown" && !e.shiftKey)) {
+        e.preventDefault();
+        txt.focus();
+      }
+      e.stopPropagation();
+    });
+    title.addEventListener("blur", () => {
+      const val = title.textContent.trim();
+      book.chapterTitles = book.chapterTitles || {};
+      if ((book.chapterTitles[chId] || "") === val) return;
+      if (val) book.chapterTitles[chId] = val;
+      else delete book.chapterTitles[chId];
+      const span = document.querySelector(`.chapter[data-id="${chId}"] .ch-title`);
+      if (span) span.textContent = val;
+      scheduleMetaSave();
+      renderNav();
+    });
+    col.appendChild(title);
+    col.appendChild(txt);
+    line.appendChild(col);
+    return line;
+  }
   line.appendChild(txt);
   return line;
 }

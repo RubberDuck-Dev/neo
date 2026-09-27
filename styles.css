@@ -620,6 +620,14 @@ body.bright .spell-menu button { color: var(--ui-text); }
 .ol-text:empty::before { color: var(--paper-faint); font-style: italic; }
 .ol-chapter .ol-text:empty::before { content: 'What happens in this chapter…'; }
 .ol-section .ol-text:empty::before { content: 'What happens in this section…'; }
+.ol-col { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+.ol-title {
+  outline: none; font-family: Georgia, serif; font-weight: 700; line-height: 1.4;
+  min-height: 1.2em; border-bottom: 1px dashed transparent; color: var(--ink);
+}
+.ol-title:focus { border-bottom-color: color-mix(in srgb, var(--accent) 45%, var(--paper)); }
+.ol-title:empty::before { content: 'Title (optional)'; color: var(--paper-faint); font-weight: 400; font-style: italic; }
+.ol-title:empty:not(:focus) { opacity: 0.6; }
 .ol-hint {
   margin-top: 40px; color: var(--paper-faint); font-size: 12.5px; font-style: italic;
   line-height: 1.7; text-align: center;
