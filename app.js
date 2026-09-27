@@ -7456,42 +7456,6 @@ function authorForBook() {
   return ownerOfBook(book.id) || (library.authors || []).find((a) => a.name === book.author) || currentAuthor();
 }
 
-// One small form before each manuscript export: the contact block (saved for
-// next time, on this computer only) and a look at the word count.
-function manuscriptDetails(d) {
-  const author = authorForBook();
-  const saved = author.submission || {};
-  const count = manuscriptWordCount(d);
-  return new Promise((resolve) => {
-    const bd = document.createElement("div");
-    bd.className = "modal-backdrop";
-    bd.innerHTML = `
-      <div class="modal ms-modal">
-        <h2 style="font-size:17px">Manuscript format</h2>
-        <p class="soft">Standard submission format: Times New Roman 12, double spaced, your contact details and a rounded word count (${escHtml(count.label)}) on page one. These details are kept on this computer only, never in your GitHub backup.</p>
-        <label>Legal name <input data-f="legalName" value="${escHtml(saved.legalName || "")}" placeholder="${escHtml(book.author || "")}"/></label>
-        <label>Mailing address <textarea data-f="address" rows="3" placeholder="Street&#10;City, State ZIP">${escHtml(saved.address || "")}</textarea></label>
-        <div class="ms-row">
-          <label>Phone <input data-f="phone" value="${escHtml(saved.phone || "")}"/></label>
-          <label>Email <input data-f="email" value="${escHtml(saved.email || "")}"/></label>
-        </div>
-        <label>Byline <input data-f="byline" value="${escHtml(book.author || "")}"/></label>
-        <div style="text-align:right;margin-top:14px"><button class="m-cancel btn-quiet">Cancel</button> <button class="m-ok btn-gold">Export .docx</button></div>
-      </div>`;
-    document.body.appendChild(bd);
-    const done = (value) => { bd.remove(); resolve(value); };
-    bd.querySelector(".m-cancel").onclick = () => done(null);
-    bd.querySelector(".m-ok").onclick = async () => {
-      const f = Object.fromEntries([...bd.querySelectorAll("[data-f]")].map((el) => [el.dataset.f, el.value.trim()]));
-      author.submission = { legalName: f.legalName, address: f.address, phone: f.phone, email: f.email };
-      await window.neo.writeLibrary(library);
-      done(f);
-    };
-    bd.addEventListener("keydown", (e) => { if (e.key === "Escape") { e.stopPropagation(); done(null); } });
-    bd.querySelector("[data-f]").focus();
-  });
-}
-
 /* ---------- Shared end matter ---------- */
 // About the Author, Also by, and a copyright page, written once per pen name
 // and added to the back of every export of that author's books. The
@@ -7536,24 +7500,68 @@ function withEndMatter(d) {
   return { ...d, sections: [...sections, ...extra] };
 }
 
-async function openEndMatter() {
+/* ---------- Publishing details: one window, two tabs ---------- */
+// File → Publishing Details… Everything NEO needs to dress a book for the
+// outside world, per pen name:
+//   Manuscript  — contact block for standard submissions (this computer only)
+//   End matter  — Also by, About the Author, Copyright (added to exports)
+// The byline is always the pen name, so it isn't asked for here.
+
+function hasSubmissionDetails(author) {
+  const s = author.submission || {};
+  return !!(s.legalName || s.address || s.email || s.phone);
+}
+
+function openPublishingDetails({ tab = "manuscript", exportAfter = false } = {}) {
   const author = book ? authorForBook() : currentAuthor();
+  const sub = author.submission || {};
   const m = author.endMatter || {};
+  document.querySelector(".pub-backdrop")?.remove();
   const bd = document.createElement("div");
-  bd.className = "modal-backdrop";
+  bd.className = "modal-backdrop pub-backdrop";
   bd.innerHTML = `
-    <div class="modal ms-modal">
-      <h2 style="font-size:17px">End matter for ${escHtml(author.name || "Anonymous")}</h2>
-      <p class="soft">Written once, added to the back of every ${escHtml(author.name || "")} book when you export it (EPUB, Word, PDF, web page, text). Your manuscript stays as it is. {year}, {title} and {author} fill themselves in.</p>
-      <label>Also by <textarea data-m="alsoBy" rows="4" placeholder="One title per line">${escHtml(m.alsoBy || "")}</textarea></label>
-      <div class="sync-actions" style="margin-top:4px"><button class="btn-quiet" data-fill>Fill from my shelves</button></div>
-      <label>About the Author <textarea data-m="about" rows="4">${escHtml(m.about || "")}</textarea></label>
-      <label>Copyright page <textarea data-m="copyright" rows="4" placeholder="Copyright © {year} {author}&#10;All rights reserved.">${escHtml(m.copyright || "")}</textarea></label>
-      ${book ? `<label class="sync-switch" style="margin-top:12px"><input type="checkbox" data-include ${book.endMatterOff ? "" : "checked"}/> <span>Include in “${escHtml(book.title || "Untitled")}”</span></label>` : ""}
-      <div style="text-align:right;margin-top:14px"><button class="m-cancel btn-quiet">Cancel</button> <button class="m-ok btn-gold">Save</button></div>
+    <div class="modal ms-modal pub-modal">
+      <div class="stats-modal-head"><h2 style="font-size:17px">Publishing details · ${escHtml(author.name || "Anonymous")}</h2><button class="m-cancel btn-quiet" title="Close">×</button></div>
+      <div class="pub-tabs" role="tablist">
+        <button role="tab" data-tab="manuscript">Manuscript</button>
+        <button role="tab" data-tab="matter">End matter</button>
+      </div>
+
+      <section data-panel="manuscript">
+        ${exportAfter ? '<p class="pub-note">Add your contact details once, then NEO exports the manuscript.</p>' : ""}
+        <p class="soft">For standard submissions (File → Export → Manuscript Format): your contact block and a rounded word count go on page one. Kept on this computer only, never in your GitHub backup.</p>
+        <label>Legal name <input data-f="legalName" value="${escHtml(sub.legalName || "")}" placeholder="${escHtml(author.name || "")}"/></label>
+        <label>Mailing address <textarea data-f="address" rows="3" placeholder="Street&#10;City, State ZIP">${escHtml(sub.address || "")}</textarea></label>
+        <div class="ms-row">
+          <label>Phone <input data-f="phone" value="${escHtml(sub.phone || "")}"/></label>
+          <label>Email <input data-f="email" value="${escHtml(sub.email || "")}"/></label>
+        </div>
+        <p class="soft pub-byline">Byline: <strong>${escHtml(author.name || "Anonymous")}</strong>, your pen name. Change it on the shelf or on a title page.</p>
+      </section>
+
+      <section data-panel="matter">
+        <p class="soft">Added to the back of every ${escHtml(author.name || "")} book when you export it (EPUB, Word, PDF, web page, text). Your manuscript stays as it is. {year}, {title} and {author} fill themselves in.</p>
+        <label>Also by <textarea data-m="alsoBy" rows="4" placeholder="One title per line">${escHtml(m.alsoBy || "")}</textarea></label>
+        <div class="sync-actions" style="margin-top:4px"><button class="btn-quiet" data-fill>Fill from my shelves</button></div>
+        <label>About the Author <textarea data-m="about" rows="4">${escHtml(m.about || "")}</textarea></label>
+        <label>Copyright page <textarea data-m="copyright" rows="4" placeholder="Copyright © {year} {author}&#10;All rights reserved.">${escHtml(m.copyright || "")}</textarea></label>
+        ${book ? `<label class="sync-switch" style="margin-top:12px"><input type="checkbox" data-include ${book.endMatterOff ? "" : "checked"}/> <span>Include in “${escHtml(book.title || "Untitled")}”</span></label>` : ""}
+      </section>
+
+      <div style="text-align:right;margin-top:14px"><button class="m-cancel btn-quiet">Cancel</button> <button class="m-ok btn-gold">${exportAfter ? "Save &amp; export manuscript" : "Save"}</button></div>
     </div>`;
   document.body.appendChild(bd);
+
+  const show = (name) => {
+    bd.querySelectorAll("[data-tab]").forEach((b) => b.classList.toggle("active", b.dataset.tab === name));
+    bd.querySelectorAll("[data-panel]").forEach((p) => (p.hidden = p.dataset.panel !== name));
+    bd.querySelector(`[data-panel="${name}"] input, [data-panel="${name}"] textarea`)?.focus();
+  };
+  bd.querySelectorAll("[data-tab]").forEach((b) => (b.onclick = () => show(b.dataset.tab)));
+  show(tab);
+
   const close = () => bd.remove();
+  bd.querySelectorAll(".m-cancel").forEach((b) => (b.onclick = close));
   bd.querySelector("[data-fill]").onclick = async () => {
     const titles = [];
     for (const id of otherTitlesBy(author)) {
@@ -7563,20 +7571,20 @@ async function openEndMatter() {
     bd.querySelector('[data-m="alsoBy"]').value = titles.join("\n");
     if (!titles.length) toast("No other titles on this pen name’s shelves yet");
   };
-  bd.querySelector(".m-cancel").onclick = close;
   bd.querySelector(".m-ok").onclick = async () => {
+    author.submission = Object.fromEntries([...bd.querySelectorAll("[data-f]")].map((el) => [el.dataset.f, el.value.trim()]));
     author.endMatter = Object.fromEntries([...bd.querySelectorAll("[data-m]")].map((el) => [el.dataset.m, el.value.trim()]));
     await window.neo.writeLibrary(library);
     const include = bd.querySelector("[data-include]");
-    if (include && book) {
+    if (include && book && book.endMatterOff !== !include.checked) {
       book.endMatterOff = !include.checked;
       scheduleMetaSave();
     }
     close();
-    toast("End matter saved");
+    if (exportAfter) doExport("manuscript");
+    else toast("Publishing details saved");
   };
   bd.addEventListener("keydown", (e) => { if (e.key === "Escape") { e.stopPropagation(); close(); } });
-  bd.querySelector("textarea").focus();
 }
 
 /* ---------- EPUB (KDP-friendly: EPUB 3, nav + NCX TOC, cover image) ---------- */
@@ -7870,10 +7878,13 @@ async function doExport(format) {
   const defaultName = safeName(book.title);
   let payload;
   if (format === "manuscript") {
+    const author = authorForBook();
+    if (!hasSubmissionDetails(author)) {
+      openPublishingDetails({ tab: "manuscript", exportAfter: true });
+      return;
+    }
     const d = bookExportData();
-    const contact = await manuscriptDetails(d);
-    if (!contact) return;
-    payload = { format: "docx", defaultName: defaultName + " - manuscript", zipEntries: buildManuscriptDocxEntries(d, contact) };
+    payload = { format: "docx", defaultName: defaultName + " - manuscript", zipEntries: buildManuscriptDocxEntries(d, { ...author.submission, byline: author.name }) };
   } else {
     const d = withEndMatter(bookExportData());
     if (format === "docx")
@@ -8067,7 +8078,7 @@ window.neo.onMenu(async (msg) => {
   if (msg.type === "spellcheck") toggleSpellcheck();
   if (msg.type === "revisionPass") toggleRevisionPass();
   if (msg.type === "readAloud") toggleReadAloud();
-  if (msg.type === "endMatter") openEndMatter();
+  if (msg.type === "publishingDetails") openPublishingDetails({ tab: msg.tab || "manuscript" });
   if (msg.type === "typewriter") toggleTypewriter();
   if (msg.type === "import") importBooks();
   if (msg.type === "stats") openStats();
