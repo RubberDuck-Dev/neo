@@ -351,6 +351,7 @@ function displayAuthor() {
 const PLUGINS = {
   palette: { name: "Palette themes", icon: "◐", kind: "Personalization", description: "Give this author a distinct writing-room palette.", status: "Ready" },
   storyMap: { name: "Story Map", icon: "↗", kind: "Planning", description: "Map each chapter’s act, story beat, thread, and progress beside the working outline.", status: "Ready" },
+  sprints: { name: "Writing Sprints", icon: "⚡", kind: "Writing tool", description: "Race a timer or a word count, NaNoWriMo-style. Start one from Progress & Settings; the word counter becomes the countdown.", status: "Ready" },
   noteCards: { name: "Note cards", icon: "▤", kind: "Writing tool", description: "Keep research, character, and scene cards with each book.", status: "Ready" },
   github: { name: "GitHub backup", icon: "⌘", kind: "Backup", description: "Keep an automatic, private backup of your entire NEO Library on GitHub.", status: "Ready" }
 };
@@ -514,6 +515,7 @@ function applyPluginAppearance() {
     document.body.style.setProperty("--paper-muted", colors.nightMuted || colors.muted);
     document.body.style.setProperty("--paper-faint", colors.nightFaint || colors.lineStrong);
   }
+  if (sprint && !pluginEnabled("sprints")) { endSprintQuietly(); if (book) updateCounters(); }
   const cardsTab = $('.tab[data-tab="cards"]');
   if (cardsTab) cardsTab.hidden = !pluginEnabled("noteCards");
   if (currentTab === "cards" && !pluginEnabled("noteCards")) switchTab("manuscript");
@@ -5927,6 +5929,7 @@ function finishSprint(message) {
 
 function updateSprintCounter(total = bookWordCount()) {
   if (!sprint || sprint.done) return false;
+  if (!pluginEnabled("sprints")) { endSprintQuietly(); return false; }
   const gc = $("#goal-counter");
   if (sprint.mode === "timer") {
     if (sprint.paused) {
@@ -6003,6 +6006,16 @@ function toggleTimerPause() {
   }
   updateSprintControls();
   updateCounters();
+}
+
+// The plugin was removed (or the pen name changed) mid-sprint: no toast,
+// no flash, the counter simply goes back to today's words.
+function endSprintQuietly() {
+  if (!sprint) return;
+  clearInterval(sprintTimer);
+  sprintTimer = null;
+  sprint = null;
+  updateSprintControls();
 }
 
 function stopSprint() {
@@ -6250,7 +6263,7 @@ function openStats() {
         </label>
       </div>
       ${
-        hasBook
+        hasBook && pluginEnabled("sprints")
           ? `
       <div class="stats-section">
         <h3>Writing Sprint</h3>

@@ -57,7 +57,7 @@ Every book gets a cover! New books are dressed in a seeded abstract (six art sty
 
 **Goals and momentum** 
 
-Daily word goals, word sprints, and a NaNoWriMo-style progress chart. Needs more testing, but I think it works okay!
+Daily word goals and a NaNoWriMo-style progress chart. Want to race the clock? Install Writing Sprints from ✦ Plugins: a timer or word-count sprint takes over the word counter until it's done.
 
 **Exports** 
 
