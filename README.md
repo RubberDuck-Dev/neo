@@ -47,6 +47,10 @@ The writing advice is "kill your darlings" — but I say: *keep the bodies*. Dra
 
 Mid-flow and need a name, a fact, a date? ⌘⇧X drops a mark and a sticky note. The left panel shows a red dot on every chapter that you need to get back to. The right panel will list all these to-do items.
 
+**Chapter status**
+
+Right-click a chapter in the chapter list to mark it Draft, Revised or Done. A small mark sits beside the word count, and the list's heading keeps score ("3 of 12 done"). Handy in revision; invisible if you never use it.
+
 **Outlining for plotters** 
 
 Outline chapters and sections in the Outline tab; section notes appear in the manuscript as gray ghost paragraphs, ready to be overwritten. Pantsers can ignore all of it or learn to draw a freakin' map for the first time. Try it. You might like it!

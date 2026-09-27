@@ -1956,6 +1956,7 @@ function chapterStartBackspace(e, body, chId) {
   }
   if (book.chapterTitles) delete book.chapterTitles[chId];
   if (book.chapterNotes) delete book.chapterNotes[chId];
+  if (book.chapterStatus) delete book.chapterStatus[chId];
   book.chapterOrder = book.chapterOrder.filter((c) => c !== chId);
   delete chapterHTML[chId];
   window.neo.deleteChapter(book.id, chId);
@@ -2851,6 +2852,7 @@ async function deleteChapterQuiet(chId) {
   delete wordCache[chId];
   if (book.sectionNotes) delete book.sectionNotes[chId];
   if (book.chapterNotes) delete book.chapterNotes[chId];
+  if (book.chapterStatus) delete book.chapterStatus[chId];
   stickies = stickies.filter((s) => s.chapterId !== chId);
   window.neo.writeJSON(book.id, "stickies", stickies);
   window.neo.deleteChapter(book.id, chId);
@@ -3080,11 +3082,12 @@ function renderNav() {
     const words = chapterWords(chId);
     const flagged = stickies.some((s) => s.chapterId === chId && !s.resolved);
     const chTitle = (book.chapterTitles || {})[chId];
+    const status = CHAPTER_STATUS[(book.chapterStatus || {})[chId]];
     const item = document.createElement("div");
     item.className = "nav-item" + (chId === currentChapterId ? " current" : "");
     item.dataset.id = chId;
     item.innerHTML = `<div class="n-row" title="Drag to reorder chapters"><span class="n-label"></span>
-      <span style="display:flex;align-items:center"><span class="n-words">${words.toLocaleString()}</span>${flagged ? '<span class="n-flag" title="Unresolved placeholder"></span>' : ""}</span></div>`;
+      <span style="display:flex;align-items:center">${status ? `<span class="n-status n-status-${status.key}" title="${status.label} · right-click to change">${status.mark}</span>` : ""}<span class="n-words">${words.toLocaleString()}</span>${flagged ? '<span class="n-flag" title="Unresolved placeholder"></span>' : ""}</span></div>`;
     item.querySelector(".n-label").textContent =
       book.chapterOrder.length === 1
         ? book.title || "The story"
@@ -3129,8 +3132,71 @@ function renderNav() {
       switchTab("manuscript");
       focusChapter(chId);
     };
+    item.addEventListener("contextmenu", (e) => {
+      if (e.target.closest(".nav-note")) return; // the note is text: its own menu
+      e.preventDefault();
+      chapterStatusMenu(chId, e.clientX, e.clientY);
+    });
     list.appendChild(item);
   });
+  renderNavProgress();
+}
+
+/* ---------- Chapter status: Draft · Revised · Done ---------- */
+// A quiet mark in the chapter list, set from a right-click. Nothing in the
+// manuscript changes; it's a map of where the revision stands.
+const CHAPTER_STATUS = {
+  draft: { key: "draft", label: "Draft", mark: "○" },
+  revised: { key: "revised", label: "Revised", mark: "◐" },
+  done: { key: "done", label: "Done", mark: "●" },
+};
+
+function setChapterStatus(chId, value) {
+  book.chapterStatus = book.chapterStatus || {};
+  if (value) book.chapterStatus[chId] = value;
+  else delete book.chapterStatus[chId];
+  scheduleMetaSave();
+  renderNav();
+}
+
+function renderNavProgress() {
+  const head = $("#nav-head > span");
+  if (!head) return;
+  const statuses = book.chapterOrder.map((id) => (book.chapterStatus || {})[id]).filter(Boolean);
+  const done = statuses.filter((v) => v === "done").length;
+  head.textContent = statuses.length ? `Chapters · ${done} of ${book.chapterOrder.length} done` : "Chapters";
+}
+
+function chapterStatusMenu(chId, x, y) {
+  document.querySelector(".spell-menu")?.remove();
+  const menu = document.createElement("div");
+  menu.className = "spell-menu status-menu";
+  const current = (book.chapterStatus || {})[chId];
+  for (const st of Object.values(CHAPTER_STATUS)) {
+    const b = document.createElement("button");
+    b.innerHTML = `<span class="n-status n-status-${st.key}">${st.mark}</span> ${st.label}${current === st.key ? " ✓" : ""}`;
+    b.onclick = () => { menu.remove(); setChapterStatus(chId, st.key); };
+    menu.appendChild(b);
+  }
+  if (current) {
+    const sep = document.createElement("div");
+    sep.className = "sm-sep";
+    menu.appendChild(sep);
+    const clear = document.createElement("button");
+    clear.textContent = "Clear status";
+    clear.onclick = () => { menu.remove(); setChapterStatus(chId, null); };
+    menu.appendChild(clear);
+  }
+  document.body.appendChild(menu);
+  const r = menu.getBoundingClientRect();
+  menu.style.left = Math.min(x, window.innerWidth - r.width - 10) + "px";
+  menu.style.top = Math.min(y + 4, window.innerHeight - r.height - 10) + "px";
+  const close = (ev) => {
+    if (menu.contains(ev.target)) return;
+    menu.remove();
+    document.removeEventListener("mousedown", close, true);
+  };
+  document.addEventListener("mousedown", close, true);
 }
 
 $("#nav-add").onclick = () => {

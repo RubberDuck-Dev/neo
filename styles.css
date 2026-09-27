@@ -1087,3 +1087,9 @@ body.bright .show-scrollbar::-webkit-scrollbar-thumb:hover { background: rgba(25
 .ms-modal label.sync-switch { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--ui-text); }
 .ms-modal label.sync-switch input { width: auto; display: inline-block; margin: 0; accent-color: var(--accent); }
 .pub-modal .sync-actions button[data-fill] { color: var(--accent); padding: 2px 0; font-size: 12px; }
+
+/* Chapter status (right-click a chapter in the chapter list) */
+.n-status { font-size: 12px; margin-right: 6px; line-height: 1; color: var(--muted); }
+.n-status-revised { color: color-mix(in srgb, var(--accent) 75%, var(--muted)); }
+.n-status-done { color: var(--accent); }
+.status-menu button { font-family: system-ui, sans-serif; font-size: 13px; }
