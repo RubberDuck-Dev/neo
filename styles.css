@@ -1093,3 +1093,10 @@ body.bright .show-scrollbar::-webkit-scrollbar-thumb:hover { background: rgba(25
 .n-status-revised { color: color-mix(in srgb, var(--accent) 75%, var(--muted)); }
 .n-status-done { color: var(--accent); }
 .status-menu button { font-family: system-ui, sans-serif; font-size: 13px; }
+
+/* Focus mode: the paragraph you're in stays; the rest steps back */
+body.focus-mode .chapter-body > p,
+body.focus-mode .chapter-head,
+body.focus-mode #title-page { opacity: 0.28; transition: opacity 0.25s ease; }
+body.focus-mode .chapter-body > p.focus-current { opacity: 1; }
+body.focus-mode .chapter-body > p.scene-break { opacity: 0.2; }

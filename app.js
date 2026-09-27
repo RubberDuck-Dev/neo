@@ -2538,8 +2538,12 @@ function sceneBreakDelete(e, body, chId) {
 
 // Read a body's HTML for saving:
 function captureBody(body) {
-  // chapter-opening is a rendering aid, not author content.
+  // chapter-opening and focus-current are rendering aids, not author content.
   const copy = body.cloneNode(true);
+  copy.querySelectorAll("p.focus-current").forEach((p) => {
+    p.classList.remove("focus-current");
+    if (!p.classList.length) p.removeAttribute("class");
+  });
   copy.querySelectorAll("p.chapter-opening").forEach((p) => {
     p.classList.remove("chapter-opening", "has-leading-quote");
     p.querySelectorAll("span.dropcap-letter, span.opening-quote").forEach(
@@ -2548,6 +2552,7 @@ function captureBody(body) {
       },
     );
   });
+  copy.querySelectorAll('p[class=""]').forEach((p) => p.removeAttribute("class"));
   return copy.innerHTML;
 }
 
@@ -2594,6 +2599,7 @@ document.addEventListener('selectionchange', () => {
     const ch = caretP.closest('.chapter');
     if (ch) scanSpellingIn(ch.querySelector('.chapter-body'), ch.dataset.id);
   }
+  if (focusModeOn) markFocusParagraph(caretP);
   // keep the Format menu's Poetry Paragraph check in step with the caret
   // (the drop cap's cap-off is handled per edit in the beforeinput handler)
   const inPoetry = !!(caretP && caretP.classList.contains('poetry'));
@@ -5902,6 +5908,42 @@ document.addEventListener("keydown", (e) => {
 }, true);
 document.addEventListener("mousedown", () => { if (reading) stopReadAloud(); }, true);
 
+/* ---------- Focus mode (View → Focus Mode) ---------- */
+// Everything but the paragraph you're in fades back. Off by default; the
+// page itself doesn't change, and the choice is remembered.
+let focusModeOn = false;
+let focusPara = null;
+
+function markFocusParagraph(p) {
+  if (p === focusPara) return;
+  if (focusPara && focusPara.isConnected) {
+    focusPara.classList.remove("focus-current");
+    if (!focusPara.classList.length) focusPara.removeAttribute("class");
+  }
+  focusPara = p || null;
+  if (focusPara) focusPara.classList.add("focus-current");
+}
+
+function applyFocusMode() {
+  document.body.classList.toggle("focus-mode", focusModeOn);
+  if (!focusModeOn) markFocusParagraph(null);
+  else {
+    const sel = window.getSelection();
+    const node = sel && sel.anchorNode;
+    const el = node && (node.nodeType === Node.TEXT_NODE ? node.parentElement : node);
+    const p = el && el.closest && el.closest(".chapter-body > p");
+    markFocusParagraph(p);
+  }
+}
+
+function toggleFocusMode() {
+  focusModeOn = !focusModeOn;
+  library.focusMode = focusModeOn;
+  window.neo.writeLibrary(library);
+  applyFocusMode();
+  toast(focusModeOn ? "Focus mode on" : "Focus mode off");
+}
+
 let typewriterEnabled = false;
 // The page needs empty room beneath its last line, or the caret can't be held
 // at the centre once the end of the draft scrolls into view (body.typewriter
@@ -7113,6 +7155,7 @@ function showHelp() {
         ${row(KPH, 'Placeholder note')}
         ${row(KDA, 'Send the selected passage to Darlings')}
         ${row(K('⌘⇧;', 'Ctrl+Shift+;'), 'Revision pass — echoes, filler, -ly adverbs, name slips. Esc ends it')}
+        ${row(K('⌘⇧U', 'Ctrl+Shift+U'), 'Focus mode — everything but your paragraph fades back')}
         ${row(K('⌘⇧R', 'Ctrl+Shift+R'), 'Read aloud from the caret, or the selection. Any key stops it')}
         ${row(KZ, 'Undo big moves (chapter deletes, replace-all, darlings) when not mid-typing')}
         ${row('-- and ...', 'Become an em dash — and a true ellipsis …')}
@@ -8218,6 +8261,7 @@ window.neo.onMenu(async (msg) => {
   if (msg.type === "readAloud") toggleReadAloud();
   if (msg.type === "publishingDetails") openPublishingDetails({ tab: msg.tab || "manuscript" });
   if (msg.type === "typewriter") toggleTypewriter();
+  if (msg.type === "focusMode") toggleFocusMode();
   if (msg.type === "import") importBooks();
   if (msg.type === "stats") openStats();
   if (msg.type === "syncSettings") openSyncSettings();
@@ -8346,4 +8390,6 @@ loadLibrary().then(() => {
   applyPluginAppearance();
   typewriterEnabled = !!library.typewriter;
   applyTypewriter();
+  focusModeOn = !!library.focusMode;
+  applyFocusMode();
 });

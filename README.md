@@ -35,6 +35,10 @@ When you're editing, not drafting: Edit → Revision Pass (⌘⇧;) marks echoes
 
 Hearing your prose catches clunky rhythm and missing words that your eyes skip. Edit → Read Aloud (⌘⇧R) reads from the caret to the end of the chapter, or just the selection, in your computer's own voice, and lights up each sentence as it goes. Any key stops it. Pick the voice and speed in Progress & Settings (⌘,).
 
+**Focus mode**
+
+View → Focus Mode (⌘⇧U) fades everything but the paragraph you're writing. Off by default; NEO remembers your choice.
+
 **Enter, Enter, Enter** 
 
 One Enter: new paragraph. Two: a `***` section break. Three: a new chapter. The goal is to KEEP WRITING.

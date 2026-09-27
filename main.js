@@ -1957,6 +1957,11 @@ function buildMenu() {
           accelerator: 'CmdOrCtrl+Shift+T',
           click: () => sendToWindow({ type: 'typewriter' })
         },
+        {
+          label: 'Focus Mode',
+          accelerator: 'CmdOrCtrl+Shift+U',
+          click: () => sendToWindow({ type: 'focusMode' })
+        },
         { type: 'separator' },
         // ticks when the caret sits in a poetry paragraph; ⇧Enter is the
         // editor's own key, so no accelerator here
