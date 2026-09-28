@@ -264,24 +264,6 @@ input[type="number"]::-webkit-outer-spin-button { -webkit-appearance: none; marg
 .book.cv-oswald.cv-scrim::after { top: 0; bottom: 30%; background: linear-gradient(to top, rgba(0,0,0,0), rgba(0,0,0,0.6)); }
 .book.cv-dark.cv-oswald.cv-scrim::after { background: linear-gradient(to top, rgba(255,255,255,0), rgba(255,255,255,0.65)); }
 
-/* settings: painted covers */
-.st-covers label input[type=password] { font-family: monospace; font-size: 12px; }
-.st-check { display: inline-flex !important; align-items: center; gap: 6px; }
-.st-advanced { margin-bottom: 6px; }
-.st-advanced summary { cursor: pointer; font-size: 12px; list-style: none; }
-.st-advanced summary::before { content: '\25B8 '; }
-.st-advanced[open] summary::before { content: '\25BE '; }
-.st-advanced input { width: 150px; }
-
-/* NEO is painting a cover from the text: a slow shimmer along the spine */
-.book.cv-painting::before { animation: none; }
-.book .b-painting {
-  position: absolute; inset: 0; z-index: 3; pointer-events: none; border-radius: inherit;
-  background: linear-gradient(110deg, rgba(255,255,255,0) 30%, rgba(255,255,255,0.18) 50%, rgba(255,255,255,0) 70%);
-  background-size: 250% 100%; animation: neo-shimmer 1.8s linear infinite;
-}
-@keyframes neo-shimmer { from { background-position: 120% 0; } to { background-position: -130% 0; } }
-
 .drop-indicator {
   width: 3px; height: 140px; align-self: flex-end; margin-bottom: 5px;
   background: var(--accent); border-radius: 2px; pointer-events: none;

@@ -44,7 +44,7 @@ async function openNeo({ init = '', lib = {}, chapters = null } = {}) {
     const calls = [];
     window.__calls = calls;
     const book = { id: 'book-1', title: 'The Gate', author: 'A. Writer', chapterOrder: ['c1', 'c2'], chapterTitles: {}, chapterNotes: {}, tabNames: { notes: 'Notes', outline: 'Outline' }, wordGoal: 0 };
-    const library = { authorName: 'A. Writer', authors: [{ id: 'a1', name: 'A. Writer' }], currentAuthorId: 'a1', firstRunDone: true, hintShown: true, coverArtNudged: true, pageTheme: 'night', shelves: [{ id: 's1', name: 'WIP', bookIds: ['book-1'] }], history: { enabled: true }, ...lib };
+    const library = { authorName: 'A. Writer', authors: [{ id: 'a1', name: 'A. Writer' }], currentAuthorId: 'a1', firstRunDone: true, hintShown: true, pageTheme: 'night', shelves: [{ id: 's1', name: 'WIP', bookIds: ['book-1'] }], history: { enabled: true }, ...lib };
     const text = chapters || { c1: CH1, c2: CH2 };
     const clone = (v) => JSON.parse(JSON.stringify(v));
     const api = {
@@ -62,7 +62,7 @@ async function openNeo({ init = '', lib = {}, chapters = null } = {}) {
       onMenu: (cb) => { window.__menu = cb; },
       appVersion: async () => '0.0.0', libraryPath: async () => '/tmp',
       spellCheckWords: async (w) => Object.fromEntries(w.map((x) => [x, true])),
-      hasSecret: async () => false, readCover: async () => null,
+      readCover: async () => null,
     };
     // eslint-disable-next-line no-eval
     eval(init);

@@ -1,13 +1,12 @@
 /* NEO — cover art
  *
  * Every book on the shelf gets a cover in two layers that the shelf composites
- * live: an ART layer (a seeded abstract painted on a canvas, or an image the
- * writer chose, or one NEO painted from the text) and a TYPE layer (title and
- * author set in one of several templates). Because the type is real text, it
- * never smears the way image models render lettering, and a renamed book
- * re-sets its cover for free.
+ * live: an ART layer (a seeded abstract, a writer-chosen image, or a saved
+ * legacy cover) and a TYPE layer (title and author set in one of several
+ * templates). Because the type is real text, a renamed book re-sets its
+ * cover for free.
  *
- * Loaded before app.js; exposes window.NeoCovers.
+ * Loaded before the renderer; exposes window.NeoCovers.
  */
 
 'use strict';
@@ -406,7 +405,7 @@ const NeoCovers = (() => {
   }
 
   // Decide everything about a book's cover from its metadata. `art` is an
-  // optional { url, canvas } for an image (chosen or painted) — when absent
+  // optional { url, canvas } for a chosen or legacy saved image — when absent
   // the abstract is used.
   function plan(meta, art) {
     const seed = String(meta.coverSeed || meta.id);
@@ -423,7 +422,7 @@ const NeoCovers = (() => {
   }
 
   // Apply a plan to a tile element: background, template class, ink class,
-  // and the title lines themselves (the author line is app.js's).
+  // and the title lines themselves (the renderer supplies the author line).
   function dress(el, planned) {
     el.classList.remove(...TEMPLATES.map((t) => 'cv-' + t.id), 'cv-light', 'cv-dark', 'cv-scrim',
       'cv-au-light', 'cv-au-dark', 'cv-au-long', 'cv-au-scrim');
@@ -451,8 +450,8 @@ const NeoCovers = (() => {
   // The shelf composites art and type with CSS; exports need one picture.
   // This draws the same plan — same art, same lines, same ink — onto a
   // canvas the size of a KDP cover. `imageUrl` (optional) is the writer's
-  // own cover image; the abstract is used otherwise. NEO's paintings are
-  // never passed here: they are for the shelf, not for files that travel.
+  // own cover image; the abstract is used otherwise. Legacy saved cover
+  // images are for the shelf, not for exports.
   function renderFull(meta, opts = {}) {
     const OW = opts.width || 1600, OH = opts.height || 2560;
     const canvas = document.createElement('canvas');

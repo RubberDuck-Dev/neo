@@ -79,7 +79,7 @@ Enable **Outline cards** in Plugins. Switch Outline and Cards above the page wit
 
 **Cover Art** 
 
-Every book gets a cover! New books are dressed in a seeded abstract (six art styles, six type templates, typefaces bundled with NEO) so no two stories on the shelf look alike. Once a story passes 1,000 words, NEO can read it and paint an abstract cover from the text. This is a bit more work but totally worth it. Get an OpenAI API key from their website and paste it into File → Cover Art. The art is generated in the background for about a penny a picture. (These are not meant for publication, just writing inspiration!) The API key is stored encrypted in NEO's own settings, never in your library folder. The title and author are always set in real type on top, so the lettering is never left to a gen-AI model. The ↻ on any book re-rolls its type and colors, or paints it again. And you can always switch back and forth from the seeded modern look to the painted variety.
+Every book gets a cover! New books use a seeded abstract with bundled typefaces. Right-click a book or drop an image onto it to use your own cover. The ↻ on a book re-rolls its abstract and type or switches between available covers. Previously saved cover images remain available.
 
 **Goals and momentum** 
 

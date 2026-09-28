@@ -59,7 +59,7 @@ Click the word counter that says "0 today" and you get the progress room: set a 
 
 **Cover Art**
 
-New books are automatically given cover art with a seeded abstract look (six art styles, six type templates, typefaces bundled with NEO) so no two stories on the shelf look alike. Once a story passes 1,000 words, NEO can read it and paint a cover from the text. This is a bit more work but totally worth it. Get an OpenAI API key from their website and paste it into File → Cover Art. The art is generated in the background for about a penny a picture. (These are not meant for publication, just writing inspiration!) The API key is stored encrypted in NEO's own settings, never in your library folder. The title and author are always set in real type on top, so the lettering is never left to a gen-AI model. The ↻ on any book re-rolls its type and colors, or paints it again. And you can always switch back and forth from the seeded modern look to the painted variety.
+New books receive a seeded abstract cover with bundled typefaces. Right-click a book or drop an image onto it to set your own cover. Use ↻ to re-roll the abstract and type or switch between available covers. Existing saved images remain available.
 
 
 **Getting your book out**

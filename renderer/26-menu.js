@@ -36,7 +36,6 @@ window.neo.onMenu(async (msg) => {
     toast(starter ? "GitHub backup paused: the repository has starter files. Open GitHub backup in Plugin Library to replace them." : `GitHub backup failed: ${text}`, 7000);
   }
   if (msg.type === "plugins") openPlugins();
-  if (msg.type === "coverArt") openCoverArt();
   if (msg.type === "align") {
     applyAlign(msg.value);
   }

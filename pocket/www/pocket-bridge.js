@@ -231,11 +231,6 @@
     readJSON: (bookId, name, fallback) => readJSONFile(p(bookId, name + '.json'), fallback),
     writeJSON: async (bookId, name, data) => { await writeJSONFile(p(bookId, name + '.json'), data); return true; },
 
-    /* ---------- API keys & painting: desktop only ---------- */
-    hasSecret: async () => false,
-    setSecret: async () => false,
-    paintCover: async () => { throw new Error('Cover painting happens on the desktop'); },
-
     /* ---------- covers: shown if present, managed on the Mac ---------- */
     readCover: async (bookId, fname) => {
       try {

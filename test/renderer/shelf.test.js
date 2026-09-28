@@ -15,6 +15,24 @@ const metasStub = `
   window.__metas = metas;`;
 const twoBooks = { shelves: [{ id: 's1', name: 'WIP', bookIds: ['book-1', 'book-2'] }] };
 
+test('cover menus keep manual images and omit AI painting', async (t) => {
+  if (needsBrowser(t)) return;
+  const r = await openNeo({ init: `book.coverImage = 'cover-123.png'; book.coverMode = 'abstract';` });
+  try {
+    await r.page.locator('.book').first().click({ button: 'right' });
+    const context = await r.page.locator('.modal-backdrop .fr-choice').allTextContents();
+    assert.ok(context.some(label => label.includes('Replace cover art')));
+    assert.ok(context.every(label => !/paint.*cover|AI cover/i.test(label)));
+    await r.page.click('.modal-backdrop .m-cancel');
+    await r.page.locator('.book').first().hover();
+    await r.page.click('.book .b-refresh');
+    const refresh = await r.page.locator('.modal-backdrop .fr-choice').allTextContents();
+    assert.ok(refresh.some(label => label.includes('Show your cover art')));
+    assert.ok(refresh.every(label => !/paint.*cover|AI cover/i.test(label)));
+    assert.deepEqual(r.errors, []);
+  } finally { await r.close(); }
+});
+
 test('the title-page author and the pen name stay one name', async (t) => {
   if (needsBrowser(t)) return;
   const r = await openNeo({ init: metasStub, lib: twoBooks });

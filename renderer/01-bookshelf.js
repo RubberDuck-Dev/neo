@@ -433,11 +433,9 @@ function dropIndicator() {
   return _dropInd;
 }
 
-// Covers are two layers the shelf composites live: art (a seeded abstract,
-// an image the writer chose, or one NEO painted from the text) and type.
-// See covers.js. Painted art is read once and downsampled to tile size so
-// forty books on a shelf cost about as much as forty small PNGs.
-const artCache = new Map(); // bookId/file -> { url, canvas }
+// Preserve previously generated covers as ordinary saved images. New covers
+// come from the seeded abstract or an image chosen by the writer.
+const artCache = new Map(); // bookId/file -> decoded image
 
 async function paintedArt(meta) {
   const art = meta.coverArt;
@@ -447,7 +445,7 @@ async function paintedArt(meta) {
   try {
     const data = await window.neo.readCover(meta.id, art.file);
     if (!data) {
-      window.neo.logError("painted cover missing on disk: " + key);
+      window.neo.logError("saved cover missing on disk: " + key);
       return null;
     }
     const entry = await NeoCovers.fitImage(
@@ -455,20 +453,19 @@ async function paintedArt(meta) {
       `data:${data.mime};base64,${data.base64}`,
     );
     if (!entry) {
-      window.neo.logError("painted cover would not decode: " + key);
+      window.neo.logError("saved cover would not decode: " + key);
       return null;
     }
     artCache.set(key, entry);
     return entry;
   } catch (err) {
-    window.neo.logError("painted cover: " + ((err && err.stack) || err));
+    window.neo.logError("saved cover: " + ((err && err.stack) || err));
     return null;
   }
 }
 
-// Which layers a book has to show, and which one is showing. Nothing is
-// ever thrown away by switching: the writer's image, NEO's painting, and the
-// abstract all stay available, and coverMode just picks one.
+// Keep existing saved covers available when switching between them, a
+// writer-supplied image, and the abstract.
 const hasPainting = (meta) =>
   !!(meta.coverArt && meta.coverArt.status === "done" && meta.coverArt.file);
 function coverMode(meta) {
@@ -487,13 +484,9 @@ function dressTile(el, meta) {
     el.style.background = `#1d1d1d url("${coverUrl(meta)}") center / cover no-repeat`;
     return;
   }
-  el.classList.toggle(
-    "cv-painting",
-    !!(meta.coverArt && meta.coverArt.status === "pending"),
-  );
   const token = (el._dressToken = (el._dressToken || 0) + 1);
-  // a painting already decoded is drawn straight away; otherwise the
-  // abstract shows instantly and the painting replaces it once read.
+  // A saved image already decoded is drawn straight away; otherwise the
+  // abstract shows instantly and the saved image replaces it once read.
   // The tile may not be on the page yet when the art arrives, so the only
   // staleness check is whether this tile has been dressed again since.
   const cached =
@@ -514,13 +507,9 @@ function bookTile(meta) {
   el.innerHTML = `
     <div class="b-text"><div class="b-title"></div><div class="b-author"></div></div>
     <span class="b-refresh" title="New cover">&#8635;</span>
-    <div class="b-painting" hidden></div>
     <div class="b-progress" hidden><div></div></div>`;
   el.querySelector(".b-author").textContent = meta.author || "";
   dressTile(el, meta);
-  el.querySelector(".b-painting").hidden = !(
-    meta.coverArt && meta.coverArt.status === "pending"
-  );
   el.querySelector(".b-refresh").onclick = async (e) => {
     e.stopPropagation();
     await refreshCover(meta, el);
@@ -675,122 +664,9 @@ function bookTile(meta) {
   return el;
 }
 
-/* ---- painted covers ----
-   At a thousand words a story has a shape, so NEO reads it and paints an
-   abstract cover to sit under the type. The writer's own cover (coverImage)
-   always wins; the abstract is the fallback; painting never blocks typing. */
-
-const PAINT_AT = 1000;
-const STALE_PAINT_MS = 10 * 60 * 1000; // a job that never came back
-
-function paintable(meta) {
-  if (!meta || meta.coverImage) return false; // the writer's own art is never painted over
-  if ((meta.wordCount || 0) < PAINT_AT) return false;
-  const art = meta.coverArt;
-  if (!art) return true;
-  if (art.status === "pending")
-    return Date.now() - Date.parse(art.at || 0) > STALE_PAINT_MS;
-  return false; // done, shelved, or failed: the ↻ on the tile is the way back in
-}
-
-function bookPlainText() {
-  return book.chapterOrder.map((id) => chapterText(id)).join("\n\n");
-}
-
-// Paint the open book, or a book on the shelf (text is read from disk then).
-async function requestPaint(meta, text) {
-  const provider = coverProvider();
-  if (!(await window.neo.hasSecret(provider))) {
-    if (!library.coverArtNudged) {
-      library.coverArtNudged = true;
-      await window.neo.writeLibrary(library);
-      toast(
-        "This story just passed 1,000 words \u2014 add an API key under File \u2192 Cover Art\u2026 and NEO will paint it a cover.",
-        8000,
-      );
-    }
-    return;
-  }
-  meta.coverArt = {
-    status: "pending",
-    at: new Date().toISOString(),
-    words: meta.wordCount || 0,
-  };
-  if (book && book.id === meta.id) scheduleMetaSave();
-  else await window.neo.writeBookMeta(meta.id, meta);
-  markPainting(meta.id, true);
-  if (text == null) {
-    const m = await window.neo.readBookMeta(meta.id);
-    const parts = [];
-    for (const chId of (m && m.chapterOrder) || []) {
-      const holder = document.createElement("div");
-      holder.innerHTML = await window.neo.readChapter(meta.id, chId);
-      holder
-        .querySelectorAll(".darling-anchor, .ph-mark, .ghost")
-        .forEach((n) => n.remove());
-      parts.push(holder.innerText);
-    }
-    text = parts.join("\n\n");
-  }
-  const cs = coverSettings();
-  const mine = (cs.models && cs.models[provider]) || {};
-  let res = null;
-  try {
-    res = await window.neo.paintCover(meta.id, text, {
-      provider,
-      textModel: mine.text,
-      imageModel: mine.image,
-      quality: cs.quality,
-    });
-  } catch (err) {
-    window.neo.logError("paint request: " + ((err && err.stack) || err));
-    res = { error: String((err && err.message) || err) };
-  }
-  // the writer may have moved on — write to whichever copy of the meta is live
-  const live =
-    book && book.id === meta.id
-      ? book
-      : (await window.neo.readBookMeta(meta.id)) || meta;
-  if (res && res.file) {
-    live.coverArt = {
-      status: "done",
-      file: res.file,
-      brief: res.brief,
-      words: meta.wordCount || 0,
-      at: new Date().toISOString(),
-    };
-    if (!live.coverImage) live.coverMode = "painted";
-    artCache.delete(meta.id + "/" + res.file);
-  } else {
-    live.coverArt = {
-      status: "failed",
-      error: (res && res.error) || "unknown",
-      at: new Date().toISOString(),
-    };
-    toast("NEO couldn\u2019t paint that cover: " + live.coverArt.error, 7000);
-  }
-  if (live === book) scheduleMetaSave();
-  else await window.neo.writeBookMeta(meta.id, live);
-  markPainting(meta.id, false);
-  if (!$("#bookshelf-view").hidden) renderShelves();
-}
-
-// shimmer on the tile while its painting is in flight
-function markPainting(bookId, on) {
-  for (const el of $$(".book")) {
-    if (el.dataset.bookId !== bookId) continue;
-    el.classList.toggle("cv-painting", on);
-    const sh = el.querySelector(".b-painting");
-    if (sh) sh.hidden = !on;
-  }
-}
-
-// the ↻ on a tile: switch between the covers a book has, re-roll the
-// abstract, or paint a fresh one from the text
+// The ↻ on a tile switches saved covers or re-rolls the abstract and type.
 async function refreshCover(meta, el) {
   const mode = coverMode(meta);
-  const enough = (meta.wordCount || 0) >= PAINT_AT;
-  const hasKey = await window.neo.hasSecret(coverProvider());
   const options = [];
   if (meta.coverImage && mode !== "image")
     options.push({
@@ -800,8 +676,8 @@ async function refreshCover(meta, el) {
     });
   if (hasPainting(meta) && mode !== "painted")
     options.push({
-      label: "Show NEO\u2019s painting",
-      desc: "The cover painted from the text.",
+      label: "Show saved cover",
+      desc: "An image already saved with this book.",
       value: "painted",
     });
   if (mode !== "abstract")
@@ -818,23 +694,6 @@ async function refreshCover(meta, el) {
         : "Re-sets the title in a different style over the same art.",
     value: "reroll",
   });
-  if (hasKey) {
-    options.push(
-      enough
-        ? {
-            label: hasPainting(meta)
-              ? "Paint it again"
-              : "Paint a cover from the text",
-            desc: "NEO reads the manuscript and paints a new cover. About a minute; a few cents.",
-            value: "paint",
-          }
-        : {
-            label: "Paint a cover from the text",
-            desc: `Once the story passes ${PAINT_AT.toLocaleString()} words.`,
-            value: "nope",
-          },
-    );
-  }
   // a plain abstract with nothing else to offer just re-rolls
   const choice =
     options.length === 1
@@ -844,21 +703,8 @@ async function refreshCover(meta, el) {
           null,
           options,
         );
-  if (!choice || choice === "nope") return;
+  if (!choice) return;
   const live = book && book.id === meta.id ? book : meta;
-  if (choice === "paint") {
-    if (
-      meta.coverArt &&
-      meta.coverArt.status === "pending" &&
-      !paintable(meta)
-    ) {
-      toast("Still painting\u2026");
-      return;
-    }
-    live.coverMode = "painted";
-    requestPaint(live, book && book.id === meta.id ? bookPlainText() : null);
-    return;
-  }
   if (choice === "reroll") {
     live.coverSeed =
       meta.id + ":" + (meta.wordCount || 0) + ":" + Date.now().toString(36);
