@@ -7,7 +7,9 @@
     "en-AU": { label: "English (Australia)", pkg: "dictionary-en-au" },
     fr: { label: "French", pkg: "dictionary-fr" },
     es: { label: "Spanish", pkg: "dictionary-es" },
-    de: { label: "German", pkg: "dictionary-de" }
+    de: { label: "German", pkg: "dictionary-de" },
+    nl: { label: "Dutch", pkg: "dictionary-nl" },
+    pl: { label: "Polish", pkg: "dictionary-pl" }
   };
   const api = {
     dictionaries,

@@ -48,6 +48,7 @@ function applyFonts() {
   const zoom = Math.min(1.6, Math.max(0.75, library.pageZoom || 1));
   document.documentElement.style.setProperty("--page-zoom", zoom);
   updateZoomDisplay();
+  if (window.neo.viewState) window.neo.viewState({ pageTheme: library.pageTheme, uiBright: library.uiBright, focus: focusLevel });
 }
 
 // A built-in choice, or a font the writer picked from their own computer.

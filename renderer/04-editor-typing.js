@@ -500,11 +500,10 @@ function splitChapterAt(body, chId, block, sel) {
   const newId = createChapterAt(idx + 1);
   chapterHTML[newId] = parts.join("") || "<p><br></p>";
   persistChapter(newId);
-  const keepScroll = $("#paper-scroll").scrollTop;
   renderChapters();
   focusChapterStart(newId);
-  $("#paper-scroll").scrollTop = keepScroll; // the split point stays in view
   resetNativeUndo();
+  document.querySelector(`.chapter[data-id="${newId}"] p`)?.scrollIntoView({ block: "start" });
   breakRun++;
 }
 
@@ -594,7 +593,11 @@ function handleEnter(e, body, chId) {
     // normal Enter — native split so ⌘Z keeps working; junk spans (which
     // make the engine clone whole paragraphs) are stripped first if present
     e.preventDefault();
-    if (block.querySelector("span:not(.ph-mark)")) stripJunkSpans(block);
+    if (block.querySelector("span:not(.ph-mark)")) {
+      const caret = captureCaret();
+      stripJunkSpans(block);
+      restoreCaret(caret);
+    }
     document.execCommand("insertParagraph");
     syncChapter(body, chId);
     return true;

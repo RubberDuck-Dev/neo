@@ -6,6 +6,36 @@ let launchable;
 test.before(async () => { launchable = await canLaunch(); });
 function skip(t) { if (!launchable) { t.skip('Chromium unavailable'); return true; } return false; }
 
+test('selected interface language translates static controls independently of manuscript settings', async t => {
+  if (skip(t)) return;
+  const r = await openNeo({ init: `api.i18n = { locale: 'fr', dict: { Manuscript: 'Manuscrit', Notes: 'Remarques' }, base: {} };` });
+  try {
+    assert.equal(await r.page.locator('html').getAttribute('lang'), 'fr');
+    assert.equal(await r.page.locator('.tab[data-tab="manuscript"]').textContent(), 'Manuscrit');
+    assert.deepEqual(r.errors, []);
+  } finally { await r.close(); }
+});
+
+test('packaged update dialog downloads, reports progress, and restarts after saves', async t => {
+  if (skip(t)) return;
+  const r = await openNeo({ init: `
+    api.checkForUpdate = async () => ({ hasUpdate: true, latestVersion: '0.9.2', currentVersion: '0.9.1', canInstall: true });
+    api.downloadUpdate = async () => { calls.push(['downloadUpdate']); return true; };
+    api.installUpdate = async () => { calls.push(['installUpdate']); return true; };
+  ` });
+  try {
+    await r.menu({ type: 'checkUpdate' });
+    await r.page.getByRole('button', { name: 'Download' }).click();
+    assert.equal((await r.calls('downloadUpdate')).length, 1);
+    await r.menu({ type: 'update', state: 'downloading', percent: 50, transferred: 500000, total: 1000000 });
+    assert.equal(await r.page.locator('.up-fill').evaluate(el => el.style.width), '50%');
+    await r.menu({ type: 'update', state: 'ready', version: '0.9.2' });
+    await r.page.getByRole('button', { name: 'Restart to update' }).click();
+    await r.page.waitForFunction(() => window.__calls.some(call => call[0] === 'installUpdate'));
+    assert.deepEqual(r.errors, []);
+  } finally { await r.close(); }
+});
+
 test('GitHub setup stays separate from local saving and a failed first upload can be retried', async t => {
   if (skip(t)) return;
   const r = await openNeo({lib: {history: {enabled: true, intervalMinutes: 15}}, init: `

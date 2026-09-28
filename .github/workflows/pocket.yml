@@ -71,6 +71,7 @@ jobs:
           rm -rf www/renderer && cp -r ../renderer www/renderer
           cp -r ../plugins ../shared ../locales www/
           cp ../covers.js www/covers.js
+          cp ../i18n.js www/i18n.js
           rm -rf www/fonts && mkdir -p www/fonts && cp ../fonts/*.woff2 www/fonts/  # the cover typefaces
           cp ../styles.css www/styles.css
           npx cap sync android

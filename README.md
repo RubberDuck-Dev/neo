@@ -101,7 +101,7 @@ Continuous autosave, daily zip backups kept for two weeks, everything stored as 
 
 Optional local checkpoints preserve complete book states while you write. Browse them from File → Saving & Recovery; Compare shows exactly what changed since any version, chapter by chapter, before you decide to restore it. Enable GitHub backup in ✦ Plugins, then use the GitHub backup tab in File → Saving & Recovery (or its Plugin Library settings) to connect an empty GitHub repository for the entire NEO Library. NEO creates its local history automatically, and you can opt into background GitHub backups after each version. NEO never creates a public repository. New computer? "Set up this computer from a backup…" in GitHub backup settings downloads the library and picks up the backups where they left off; anything already on that computer is set aside, not deleted.
 
-Spellcheck uses bundled offline dictionaries, loaded only when needed. New and imported books take their manuscript language from the selected dictionary. Change one book’s language by name in File → Publishing Details → Manuscript; it controls export metadata independently of the dictionary. Revision Pass currently supports English manuscripts.
+Spellcheck uses bundled offline dictionaries, loaded only when needed, including Dutch and Polish. New and imported books take their manuscript language from the selected dictionary. Change one book’s language by name in File → Publishing Details → Manuscript; it controls export metadata independently of the dictionary. View → Language changes the interface language. Revision Pass currently supports English manuscripts. Help → Check for Update can download and install packaged updates.
 
 ## Your files
 

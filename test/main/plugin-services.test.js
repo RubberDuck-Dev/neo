@@ -27,7 +27,7 @@ test("new Linux libraries avoid spaces; legacy libraries remain in place", () =>
 
 test("all bundled dictionaries load and recognize representative words", () => {
   const nspell = require("nspell");
-  const examples = { "en-US": "hello", "en-GB": "colour", "en-CA": "hello", "en-AU": "hello", fr: "bonjour", es: "hola", de: "Haus" };
+  const examples = { "en-US": "hello", "en-GB": "colour", "en-CA": "hello", "en-AU": "hello", fr: "bonjour", es: "hola", de: "Haus", nl: "huis", pl: "dom" };
   for (const [code, entry] of Object.entries(dictionaries)) {
     const dir = path.join(__dirname, "../../node_modules", entry.pkg);
     const spell = nspell({ aff: fs.readFileSync(path.join(dir, "index.aff")), dic: fs.readFileSync(path.join(dir, "index.dic")) });

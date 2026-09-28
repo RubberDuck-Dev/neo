@@ -8,6 +8,20 @@ let launchable = false;
 test.before(async () => { launchable = await canLaunch(); });
 const needsBrowser = (t) => { if (!launchable) { t.skip('Chromium not installed (npx playwright install chromium)'); return true; } return false; };
 
+test('French writing uses guillemets and narrow spaces without changing saved prose', async (t) => {
+  if (needsBrowser(t)) return;
+  const r = await openNeo({ lib: { spellLanguage: 'fr' }, chapters: { c1: '<p>Salut </p>', c2: '<p>Suite.</p>' } });
+  try {
+    await r.openBook();
+    await r.page.click('.chapter[data-id="c1"] .chapter-body p');
+    await r.page.keyboard.press('End');
+    await r.page.keyboard.type('"bonjour" !');
+    const text = await r.page.$eval('.chapter[data-id="c1"] .chapter-body p', el => el.textContent);
+    assert.equal(text, 'Salut «\u202fbonjour\u202f»\u202f!');
+    assert.deepEqual(r.errors, []);
+  } finally { await r.close(); }
+});
+
 test('typing saves the chapter; versions wait for the timer, then land on quit', async (t) => {
   if (needsBrowser(t)) return;
   const r = await openNeo();

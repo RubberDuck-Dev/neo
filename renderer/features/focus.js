@@ -12,6 +12,7 @@ function applyFocus() {
     if (window.CSS && CSS.highlights) CSS.highlights.delete('neo-focus');
     document.querySelectorAll('.focus-cap').forEach(el => el.classList.remove('focus-cap'));
   } else updateFocus();
+  if (window.neo.viewState && library) window.neo.viewState({ pageTheme: library.pageTheme, uiBright: library.uiBright, focus: focusLevel });
 }
 function setFocus(level) {
   if (!FOCUS_LEVELS.includes(level)) return;

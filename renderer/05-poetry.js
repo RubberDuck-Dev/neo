@@ -342,6 +342,7 @@ function cleanPasteHtml(html) {
 
 // Em dash, ellipsis, smart quotes:
 function smartKeys(e, body) {
+  if (e.defaultPrevented) return;
   if (e.metaKey || e.ctrlKey || e.altKey) return;
   if (e.isComposing || e.keyCode === 229) return;
 
@@ -372,14 +373,43 @@ function smartKeys(e, body) {
     document.execCommand("insertText", false, "…"); // …
     return;
   }
+  const french = frenchTypography();
+  const spaced = french === 'ca' ? /^:$/ : /^[;:!?]$/;
+  if (french && spaced.test(e.key) && /^[ \u00a0]$/.test(prevChars(1))) {
+    e.preventDefault();
+    document.execCommand('delete');
+    document.execCommand('insertText', false, '\u202f' + e.key);
+    return;
+  }
   if (e.key === '"' || e.key === "'") {
     e.preventDefault();
     const before = prevChars(1);
-    const opening = before === "" || /[\s\(\[\{—‘“>]/.test(before);
-    const ch = e.key === '"' ? (opening ? "“" : "”") : opening ? "‘" : "’";
+    const opening = before === "" || /[\s\(\[\{—‘“«„>]/.test(before);
+    const q = quoteStyle();
+    const ch = e.key === '"' ? (opening ? q.open : q.close) : (q.singles && opening ? '‘' : '’');
     document.execCommand("insertText", false, ch);
   }
 }
+
+const QUOTE_STYLES = {
+  en: { open: '“', close: '”', singles: true }, nl: { open: '“', close: '”', singles: true },
+  pt: { open: '“', close: '”', singles: true }, 'pt-PT': { open: '«', close: '»' },
+  fr: { open: '«\u202f', close: '\u202f»' }, es: { open: '«', close: '»' },
+  it: { open: '«', close: '»' }, de: { open: '„', close: '“' }, pl: { open: '„', close: '”' }
+};
+function writingLanguage() { return library?.spellLanguage || NeoI18n.getLocale(); }
+function quoteStyle() {
+  const code = writingLanguage();
+  return QUOTE_STYLES[code] || QUOTE_STYLES[code.split('-')[0]] || QUOTE_STYLES.en;
+}
+function frenchTypography() {
+  if (!writingLanguage().startsWith('fr')) return false;
+  return /^fr-CA$/i.test(NeoI18n.getLocale()) ? 'ca' : 'fr';
+}
+document.addEventListener('keydown', e => {
+  const el = e.target;
+  if (!e.defaultPrevented && el?.isContentEditable && !el.closest('.chapter-body')) smartKeys(e, el);
+}, true);
 
 // Title page: Enter drops you into Chapter One.
 $("#tp-title").addEventListener("keydown", titleEnter);

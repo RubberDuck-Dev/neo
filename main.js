@@ -87,6 +87,9 @@ function ensureLibrary() {
 }
 
 function bookDir(bookId) {
+  if (typeof bookId !== 'string' || !bookId || /[\\/]/.test(bookId) || path.basename(bookId) !== bookId || bookId === '.' || bookId === '..') {
+    throw new Error('Invalid bookId');
+  }
   return path.join(LIBRARY_DIR, bookId);
 }
 
@@ -627,7 +630,7 @@ function docxParagraphToMarkdown(p, styles = {}) {
   // gives it its title — regardless of locale, the underlying style id is
   // always "Heading*".
   const pStyle = (p.match(/<w:pStyle\s+w:val="([^"]*)"/) || [])[1] || '';
-  const heading = /^heading\d*$/i.test(pStyle);
+  const heading = /^heading\s*\d*$/i.test(pStyle);
   // Google Docs exports each of a document's tabs under a "Title"-styled
   // line, and the book's own title page uses the same style: the first one
   // names the book, later ones start chapters (see chapterize)
@@ -701,8 +704,9 @@ async function importFile(fp) {
   const isCjkHeading = (t) =>
     (/^第[零〇一二三四五六七八九十百千万两0-9０-９]+[章节回部篇卷]/.test(t) && t.length < 40) ||
     (/^(序章|序言|楔子|引子|前言|尾声|终章|后记|附录|番外)([：:\s].*)?$/.test(t) && t.length < 40);
+  const CHAPTER_WORDS = /^(chapter|prologue|epilogue|part|chapitre|épilogue|partie|capítulo|capitulo|prólogo|prologo|epílogo|epilogo|parte|capitolo|kapitel|prolog|epilog|teil|hoofdstuk|proloog|deel|rozdział|rozdzial|część|czesc)(?![\p{L}\d])/iu;
   const isNumberedHeading = (t) => (
-    (/^(chapter|prologue|epilogue|part)\b/i.test(t) && t.length < 60) ||
+    (CHAPTER_WORDS.test(t) && t.length < 60) ||
     isCjkHeading(t.trim()) ||
     (numeralMode && isNumeralish(t))
   );
@@ -775,6 +779,15 @@ async function importFile(fp) {
   // title page, not in the body. Detect, harvest, and remove them.
   let title = styledTitle || null;
   let author = null;
+  const bylineOf = (s) => {
+    const en = s.match(/^by\s+(.{2,60})$/i);
+    if (en) return en[1];
+    const match = s.match(/^(?:par|por|von|di|door|autor:?)\s+(.{2,60})$/iu);
+    if (!match || /[.!?,;…]/.test(match[1])) return null;
+    const words = match[1].trim().split(/\s+/);
+    const particle = /^(de|da|di|do|dos|das|du|des|del|della|la|le|van|von|der|den|ten|ter|y|e)$/;
+    return words.length <= 5 && words.every((word) => /^\p{Lu}/u.test(word) || particle.test(word)) ? match[1] : null;
+  };
   const norm = (s) => s.toLowerCase().replace(/[^\p{L}\p{N}]/gu, ''); // any script, not just a–z
   const first = chapters[0];
   if (first && first.paras.length) {
@@ -782,16 +795,16 @@ async function importFile(fp) {
     const t1 = first.paras.length > 1 ? (first.paras[1].text || '').trim() : '';
     const titleish = t0 && t0.length < 90 && !/[.!?]$/.test(t0) && (
       ((norm(t0).length > 3 || (/[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}]/u.test(t0) && norm(t0).length >= 2)) && norm(name).includes(norm(t0))) ||
-      /^by\s+\S/i.test(t1) ||
+      !!bylineOf(t1) ||
       (t0 === t0.toUpperCase() && /[A-Z].*[A-Z]/.test(t0) && t0.length < 60)
     );
     if (titleish) {
       title = t0;
       first.paras.shift();
     }
-    const bl = first.paras.length ? (first.paras[0].text || '').trim().match(/^by\s+(.{2,60})$/i) : null;
+    const bl = first.paras.length ? bylineOf((first.paras[0].text || '').trim()) : null;
     if (bl) {
-      author = bl[1].trim();
+      author = bl.trim();
       first.paras.shift();
     }
     if (!first.paras.length) chapters.shift();
@@ -1155,6 +1168,12 @@ function sendToWindow(msg) {
 // whether typewriter scrolling is on
 let poetryState = false;
 let typewriterState = false;
+let viewState = { pageTheme: 'night', uiBright: false };
+ipcMain.on('view:state', (_event, state) => {
+  if (!state || typeof state !== 'object') return;
+  viewState = { pageTheme: state.pageTheme === 'paper' ? 'paper' : 'night', uiBright: !!state.uiBright };
+  try { buildMenu(); } catch (err) { logError('menu', err); }
+});
 ipcMain.on('poetry:state', (_e, on) => {
   on = !!on;
   if (on === poetryState) return;
@@ -1167,6 +1186,9 @@ ipcMain.on('typewriter:state', (_e, on) => {
   typewriterState = on;
   try { buildMenu(); } catch (err) { logError('menu', err); }
 });
+
+const uiI18n = require('./main/i18n')({ app, ipcMain, readSettings, writeSettings,
+  onChange: () => { buildMenu(); sendToWindow({ type: 'uiLanguage' }); } });
 
 function buildMenu() {
   const isMac = process.platform === 'darwin';
@@ -1201,7 +1223,10 @@ function buildMenu() {
             { label: 'EPUB (.epub)', click: () => sendToWindow({ type: 'export', format: 'epub' }) },
             { label: 'Plain Text (.txt)', click: () => sendToWindow({ type: 'export', format: 'txt' }) },
             { label: 'Markdown (.md)', click: () => sendToWindow({ type: 'export', format: 'md' }) },
-            { label: 'Web Page (.html)', click: () => sendToWindow({ type: 'export', format: 'html' }) }
+            { label: 'Web Page (.html)', click: () => sendToWindow({ type: 'export', format: 'html' }) },
+            { type: 'separator' },
+            { label: 'Chapter Titles Only', type: 'checkbox', checked: !!readJSON(LIBRARY_FILE, {}).exportCustomChapterTitles,
+              click: (item) => sendToWindow({ type: 'exportCustomChapterTitles', checked: item.checked }) }
           ]
         },
         { label: 'Publishing Details…', click: () => sendToWindow({ type: 'publishingDetails' }) },
@@ -1348,14 +1373,20 @@ function buildMenu() {
         {
           label: 'Page Appearance',
           submenu: [
-            { label: 'Dark Paper', click: () => sendToWindow({ type: 'pageTheme', value: 'night' }) },
-            { label: 'Light Paper', click: () => sendToWindow({ type: 'pageTheme', value: 'paper' }) }
+            { label: 'Dark Paper', type: 'radio', checked: viewState.pageTheme === 'night', click: () => sendToWindow({ type: 'pageTheme', value: 'night' }) },
+            { label: 'Light Paper', type: 'radio', checked: viewState.pageTheme === 'paper', click: () => sendToWindow({ type: 'pageTheme', value: 'paper' }) }
           ]
         },
         {
           label: 'Brighter Interface',
+          type: 'checkbox', checked: viewState.uiBright,
           click: () => sendToWindow({ type: 'uiBright' })
-        }
+        },
+        { type: 'separator' },
+        { label: 'Language', submenu: uiI18n.choices().map(({ code, name }) => ({
+          label: name, type: 'radio', checked: uiI18n.current() === code,
+          click: () => uiI18n.choose(code)
+        })) }
       ]
     },
     {
@@ -1385,6 +1416,15 @@ function buildMenu() {
       ]
     }
   ];
+  const translate = items => items.forEach(item => {
+    if (item.label) {
+      const plain = item.label.replace(/&&/g, '&');
+      const localized = uiI18n.t(plain);
+      item.label = isMac ? localized : localized.replace(/&/g, '&&');
+    }
+    if (Array.isArray(item.submenu)) translate(item.submenu);
+  });
+  translate(template);
   Menu.setApplicationMenu(Menu.buildFromTemplate(template));
 }
 
@@ -1401,7 +1441,7 @@ if (!app.requestSingleInstanceLock()) {
   });
 }
 
-const { checkForUpdates } = require('./main/updates')({ app, ipcMain, logError });
+const { checkForUpdates } = require('./main/updates')({ app, ipcMain, logError, sendToWindow });
 
 app.whenReady().then(() => {
   // Packaged builds get name/icon from electron-builder; this covers `npm start`.
@@ -1440,11 +1480,13 @@ app.whenReady().then(() => {
         // these two official switches remove the ones writers can't use here
         systemPreferences.setUserDefault('NSDisabledDictationMenuItem', 'boolean', true);
         systemPreferences.setUserDefault('NSDisabledCharacterPaletteMenuItem', 'boolean', true);
+        systemPreferences.setUserDefault('NSFullScreenMenuItemEverywhere', 'boolean', false);
       } catch (err) {
         logError('prefs', err);
       }
     }
 
+    try { uiI18n.init(); } catch (err) { logError('language', err); }
     try { ensureLibrary(); } catch (err) { logError('library', err); }
     createWindow();
     try { spelling.reset(); } catch (err) { logError('spell', err); }

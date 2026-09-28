@@ -71,6 +71,11 @@ installLinuxBodyFonts();
 loadPlugins().then(async () => {
   configurePlugins();
   await loadLibrary();
+  try {
+    const reopen = sessionStorage.getItem('neo-reopen');
+    sessionStorage.removeItem('neo-reopen');
+    if (reopen) await openBook(reopen);
+  } catch (err) { reportError(err.stack || String(err)); }
   await migratePluginPreferences();
   await NeoPlugins.reconcile();
   applyFonts();

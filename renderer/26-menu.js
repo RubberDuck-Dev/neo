@@ -14,7 +14,18 @@ window.neo.onMenu(async (msg) => {
   if (msg.type === "help") showHelp();
   if (msg.type === "about") showAbout();
   if (msg.type === "checkUpdate") checkForUpdate();
+  if (msg.type === 'update') updateMessage(msg);
+  if (msg.type === 'uiLanguage') {
+    flushAllSaves();
+    try { if (book) sessionStorage.setItem('neo-reopen', book.id); } catch {}
+    await waitForBookWrites();
+    await window.neo.reloadForLanguage();
+  }
   if (msg.type === "export") doExport(msg.format);
+  if (msg.type === "exportCustomChapterTitles") {
+    library.exportCustomChapterTitles = !!msg.checked;
+    await window.neo.writeLibrary(library);
+  }
   if (msg.type === "emailDraft") doEmailDraft();
   if (msg.type === "emailSettings") emailSettings();
   if (msg.type === "find") openSearch();
@@ -79,5 +90,15 @@ window.neo.onMenu(async (msg) => {
     library.fonts.dropcap = msg.value;
     await window.neo.writeLibrary(library);
     applyFonts();
+  }
+});
+
+// On layouts where the physical semicolon key produces another character,
+// Electron's Cmd/Ctrl+; menu accelerator does not fire.
+document.addEventListener('keydown', (event) => {
+  if ((event.metaKey || event.ctrlKey) && !event.shiftKey && !event.altKey &&
+      event.code === 'Semicolon' && event.key !== ';') {
+    event.preventDefault();
+    NeoPlugins.notify('command', 'spellcheck');
   }
 });

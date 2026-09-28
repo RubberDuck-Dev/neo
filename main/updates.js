@@ -1,66 +1,93 @@
 "use strict";
-module.exports = function createUpdates({ app, ipcMain, logError }) {
-// Manual update check (Help → Check for Update…): a direct GitHub Releases
-// lookup, separate from the silent auto-updater. Works in dev builds too.
-let lastReleaseUrl = null;
-
-function compareVersions(a, b) {
-  const pa = a.split('.').map(Number);
-  const pb = b.split('.').map(Number);
-  for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
-    const na = pa[i] || 0, nb = pb[i] || 0;
-    if (na !== nb) return na - nb;
+module.exports = function createUpdates({ app, ipcMain, logError, sendToWindow }) {
+  let updater = null, ready = false, lastReleaseUrl = null;
+  const compareVersions = (a, b) => {
+    const left = String(a).split('.').map(Number), right = String(b).split('.').map(Number);
+    for (let i = 0; i < Math.max(left.length, right.length); i++) {
+      if ((left[i] || 0) !== (right[i] || 0)) return (left[i] || 0) - (right[i] || 0);
+    }
+    return 0;
+  };
+  function getUpdater() {
+    if (updater || !app.isPackaged) return updater;
+    const { autoUpdater } = require('electron-updater');
+    autoUpdater.logger = null;
+    autoUpdater.autoDownload = false;
+    autoUpdater.autoInstallOnAppQuit = true;
+    autoUpdater.on('download-progress', p => sendToWindow({ type: 'update', state: 'downloading', percent: p.percent, transferred: p.transferred, total: p.total }));
+    autoUpdater.on('update-downloaded', info => {
+      ready = true;
+      sendToWindow({ type: 'update', state: 'ready', version: info?.version });
+    });
+    autoUpdater.on('error', err => {
+      logError('updater', err);
+      sendToWindow({ type: 'update', state: 'error', message: String(err?.message || err) });
+    });
+    updater = autoUpdater;
+    return updater;
   }
-  return 0;
-}
-
-// toggling at the session level forces the engine to re-scan visible text —
-// newer Chromium ignores attribute changes on text it has already looked at
-ipcMain.handle('app:version', () => app.getVersion());
-
-ipcMain.handle('update:check', async () => {
-  try {
+  async function latestRelease() {
     const res = await fetch('https://api.github.com/repos/hughhowey/neo/releases/latest', {
       headers: { 'User-Agent': 'NEO-App' }
     });
     if (!res.ok) throw new Error('GitHub API returned ' + res.status);
     const data = await res.json();
-    const latestVersion = String(data.tag_name || '').replace(/^v/, '');
-    const currentVersion = app.getVersion();
     lastReleaseUrl = data.html_url || null;
-    return {
-      hasUpdate: !!latestVersion && compareVersions(latestVersion, currentVersion) > 0,
-      latestVersion,
-      currentVersion
-    };
-  } catch (err) {
-    logError('update', err);
-    return { error: true };
+    return String(data.tag_name || '').replace(/^v/, '');
   }
-});
-
-// the renderer may only open the release page fetched above — never arbitrary URLs
-ipcMain.handle('update:openRelease', () => {
-  if (lastReleaseUrl && /^https:\/\/github\.com\//.test(lastReleaseUrl)) {
-    require('electron').shell.openExternal(lastReleaseUrl);
+  ipcMain.handle('app:version', () => app.getVersion());
+  ipcMain.handle('update:check', async () => {
+    const currentVersion = app.getVersion();
+    try {
+      const u = getUpdater();
+      if (u) {
+        const result = await u.checkForUpdates();
+        const latestVersion = result?.updateInfo?.version || '';
+        latestRelease().catch(() => {});
+        return { hasUpdate: compareVersions(latestVersion, currentVersion) > 0,
+          latestVersion, currentVersion, canInstall: true, ready };
+      }
+    } catch (err) { logError('update', err); }
+    try {
+      const latestVersion = await latestRelease();
+      return { hasUpdate: compareVersions(latestVersion, currentVersion) > 0,
+        latestVersion, currentVersion, canInstall: false };
+    } catch (err) { logError('update', err); return { error: true }; }
+  });
+  ipcMain.handle('update:download', async () => {
+    const u = getUpdater();
+    if (!u) return false;
+    if (ready) { sendToWindow({ type: 'update', state: 'ready' }); return true; }
+    try { await u.downloadUpdate(); return true; }
+    catch (err) {
+      logError('updater', err);
+      sendToWindow({ type: 'update', state: 'error', message: String(err?.message || err) });
+      return false;
+    }
+  });
+  ipcMain.handle('update:install', () => {
+    const u = getUpdater();
+    if (!u || !ready) return false;
+    setImmediate(() => u.quitAndInstall(false, true));
+    return true;
+  });
+  ipcMain.handle('update:openRelease', () => {
+    if (lastReleaseUrl && /^https:\/\/github\.com\//.test(lastReleaseUrl)) {
+      require('electron').shell.openExternal(lastReleaseUrl);
+    }
+    return true;
+  });
+  function checkForUpdates() {
+    if (!app.isPackaged) return;
+    setTimeout(async () => {
+      try {
+        const result = await getUpdater().checkForUpdates();
+        const version = result?.updateInfo?.version || '';
+        if (version && compareVersions(version, app.getVersion()) > 0) {
+          sendToWindow({ type: 'update', state: 'available', version });
+        }
+      } catch (err) { logError('updater', err); }
+    }, 8000);
   }
-  return true;
-});
-
-// Auto-update from GitHub releases. Deliberately defensive: any failure is
-// logged and swallowed, so an unsigned build or offline machine never notices.
-// (macOS auto-update only works once the app is code-signed.)
-function checkForUpdates() {
-  if (!app.isPackaged) return;
-  try {
-    const { autoUpdater } = require('electron-updater');
-    autoUpdater.logger = null;
-    autoUpdater.on('error', (err) => logError('updater', err));
-    autoUpdater.checkForUpdatesAndNotify().catch((err) => logError('updater', err));
-  } catch (err) {
-    logError('updater', err);
-  }
-}
-
-return { checkForUpdates };
+  return { checkForUpdates };
 };

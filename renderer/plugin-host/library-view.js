@@ -2,7 +2,7 @@
 
 function openPlugins() {
   const { bd, close } = settingsDialog({
-    title: NeoI18n.t("plugins.title"), scope: 'Choose tools for ' + displayAuthor() + '. Library tools apply to every author.', className: 'plugin-modal',
+    title: NeoI18n.t("Plugin Library"), scope: 'Choose tools for ' + displayAuthor() + '. Library tools apply to every author.', className: 'plugin-modal',
     content: '<div class="plugin-grid"></div>', actions: '<span class="plugin-foot">Disabling a tool keeps its saved data.</span>'
   });
   const grid = bd.querySelector(".plugin-grid");
@@ -16,7 +16,7 @@ function openPlugins() {
       const toggle = document.createElement("button");
       toggle.dataset.plugin = p.id;
       toggle.className = p.enabled ? "btn-quiet" : "btn-gold";
-      toggle.textContent = !p.available ? "Unavailable on this device" : NeoI18n.t(p.enabled ? "plugins.disable" : "plugins.enable");
+      toggle.textContent = !p.available ? "Unavailable on this device" : NeoI18n.t(p.enabled ? "Disable" : "Enable");
       toggle.disabled = !p.available;
       toggle.onclick = async () => {
         toggle.disabled = true;

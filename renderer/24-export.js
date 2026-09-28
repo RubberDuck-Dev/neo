@@ -56,12 +56,14 @@ function exportChapters() {
       `.chapter[data-id="${chId}"] .chapter-body`,
     );
     const paras = parasFromHtml(el ? el.innerHTML : chapterHTML[chId] || "");
-    const t = (book.chapterTitles || {})[chId];
+    const title = (book.chapterTitles || {})[chId];
     // chapterless stories export as continuous text
     const heading =
       book.chapterOrder.length === 1
         ? ""
-        : "Chapter " + (i + 1) + (t ? " — " + t : "");
+        : library.exportCustomChapterTitles && title
+          ? title
+          : "Chapter " + (i + 1) + (title ? " — " + title : "");
     return { num: i + 1, heading, paras };
   });
 }

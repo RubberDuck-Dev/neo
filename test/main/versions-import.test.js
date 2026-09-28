@@ -43,6 +43,29 @@ test('English chapter headings still import as before', async () => {
   assert.ok(book.chapters[1].paras.some((p) => p.scene));
 });
 
+test('international chapter headings and bylines import as book structure', async () => {
+  const file = path.join(neo.home, 'roman.md');
+  fs.writeFileSync(file, 'La Porte\n\npar Marie Dupont\n\nChapitre 1\n\nLe début.\n\nChapitre 2 — La nuit\n\nLa suite.');
+  const [book] = await neo.call('import:files', [file]);
+  assert.equal(book.title, 'La Porte');
+  assert.equal(book.author, 'Marie Dupont');
+  assert.equal(book.chapters.length, 2);
+});
+
+test('DOCX Heading 1 with a space starts a chapter', async () => {
+  const JSZip = require('jszip'), zip = new JSZip();
+  zip.file('word/document.xml', `<w:document><w:body>
+    <w:p><w:pPr><w:pStyle w:val="Heading 1"/></w:pPr><w:r><w:t>Opening</w:t></w:r></w:p>
+    <w:p><w:r><w:t>First page.</w:t></w:r></w:p>
+    <w:p><w:pPr><w:pStyle w:val="Heading 1"/></w:pPr><w:r><w:t>Ending</w:t></w:r></w:p>
+    <w:p><w:r><w:t>Last page.</w:t></w:r></w:p>
+  </w:body></w:document>`);
+  const file = path.join(neo.home, 'spaced-heading.docx');
+  fs.writeFileSync(file, await zip.generateAsync({ type: 'nodebuffer' }));
+  const [book] = await neo.call('import:files', [file]);
+  assert.deepEqual(book.chapters.map(chapter => chapter.title), ['Opening', 'Ending']);
+});
+
 test('Google Docs Title-styled tabs become a book title and chapter boundaries', async () => {
   const JSZip = require('jszip');
   const zip = new JSZip();

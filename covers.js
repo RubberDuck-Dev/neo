@@ -293,7 +293,13 @@ const NeoCovers = (() => {
     { id: 'oswald', family: 'NEO Oswald',   weight: 700, caps: true,  anchor: 'top',    lead: 0.95, max: 40, minLines: 1, maxLines: 4, connectors: 'small', rule: true }
   ];
 
-  const CONNECTORS = new Set(['the', 'of', 'a', 'an', 'and', 'in', 'on', 'to', 'for', 'at', 'by', 'from', 'or', 'with', 'is', 'are', 'my', 'your', 'our', 'his', 'her', 'its']);
+  const CONNECTORS = new Set(['the', 'of', 'a', 'an', 'and', 'in', 'on', 'to', 'for', 'at', 'by', 'from', 'or', 'with', 'is', 'are', 'my', 'your', 'our', 'his', 'her', 'its',
+    'le', 'la', 'les', 'un', 'une', 'des', 'du', 'de', 'et', 'en', 'au', 'aux', 'sur', 'pour', 'par', 'dans', 'ou', 'avec', 'mon', 'ma', 'mes', 'ton', 'ta', 'tes', 'son', 'sa', 'ses',
+    'el', 'los', 'las', 'del', 'y', 'una', 'con', 'por', 'sin', 'mi', 'tu', 'su',
+    'o', 'os', 'as', 'do', 'da', 'dos', 'das', 'e', 'em', 'um', 'uma', 'no', 'na',
+    'der', 'die', 'das', 'und', 'von', 'im', 'ein', 'eine', 'des', 'dem', 'den', 'mit', 'zum', 'zur',
+    'il', 'lo', 'i', 'gli', 'di', 'della', 'dei', 'nel', 'nella', 'per',
+    'het', 'een', 'van', 'op', 'met', 'w', 'z', 'na', 'ze', 'we']);
 
   // fonts must be in before anything is measured
   const ready = (typeof document !== 'undefined' && document.fonts)
@@ -313,7 +319,7 @@ const NeoCovers = (() => {
   // are balanced into the template's maximum number of lines by character count.
   function breakLines(title, t) {
     const words = title.trim().split(/\s+/).filter(Boolean);
-    if (!words.length) return [{ text: 'Untitled', small: false }];
+    if (!words.length) return [{ text: typeof NeoI18n !== 'undefined' ? NeoI18n.t('Untitled') : 'Untitled', small: false }];
     const isConn = (w) => CONNECTORS.has(w.toLowerCase().replace(/[^a-z]/g, ''));
     let lines;
     if (words.length <= t.maxLines) {
