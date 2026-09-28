@@ -1,22 +1,5 @@
 "use strict";
 
-function openBookSettings() {
-  if (!book) return toast('Open a book to change its settings');
-  const target = book;
-  const { bd, close } = settingsDialog({
-    title: 'Book settings', scope: `This book · ${book.title}`,
-    content: `<label>Manuscript language<input id="st-language" value="${escHtml(NeoLanguage.manuscriptLanguage(book))}" placeholder="en, fr, de, zh-Hans"/></label><p class="sync-detail">Used in exports. Dictionary and interface language are separate settings.</p><p class="dialog-error" role="status"></p>`,
-    actions: '<button class="m-cancel btn-quiet">Cancel</button><button class="m-ok btn-gold">Save</button>'
-  });
-  bd.querySelector('.m-cancel').onclick = close;
-  bd.querySelector('.m-ok').onclick = () => {
-    const input = bd.querySelector('#st-language');
-    try { target.language = Intl.getCanonicalLocales(input.value.trim() || 'en')[0]; }
-    catch { bd.querySelector('[role="status"]').textContent = 'Use a language tag such as en, fr, or zh-Hans.'; input.focus(); return; }
-    scheduleMetaSave(); close(); toast('Book settings saved');
-  };
-}
-
 function openPreferences() {
   let saving = false;
   const { bd, close } = settingsDialog({

@@ -23,6 +23,7 @@ async function addImportedBooks(results, shelf) {
       author: displayAuthor(), // a book takes its shelf’s pen name
       title: r.title || r.name,
     });
+    meta.language = NeoLanguage.defaultManuscriptLanguage(library);
     meta.title = r.title || r.name;
     meta.tabNames = {
       notes: (library.tabDefaults && library.tabDefaults.notes) || "Notes",

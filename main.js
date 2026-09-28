@@ -1275,7 +1275,6 @@ function buildMenu() {
       label: 'File',
       submenu: [
         { label: isMac ? 'Saving & Recovery…' : 'Saving && Recovery…', click: () => sendToWindow({ type: 'syncSettings' }) },
-        { label: 'Book Settings…', click: () => sendToWindow({ type: 'bookSettings' }) },
         {
           label: isMac ? 'Progress & Goals…' : 'Progress && Goals…',
           click: () => sendToWindow({ type: 'stats' })

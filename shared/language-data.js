@@ -9,7 +9,11 @@
     es: { label: "Spanish", pkg: "dictionary-es" },
     de: { label: "German", pkg: "dictionary-de" }
   };
-  const api = { dictionaries, manuscriptLanguage: (book) => book?.language || "en" };
+  const api = {
+    dictionaries,
+    manuscriptLanguage: (book) => book?.language || "en",
+    defaultManuscriptLanguage: (library) => (library?.spellLanguage || "en-US").split("-")[0]
+  };
   if (typeof module !== "undefined" && module.exports) module.exports = api;
   else root.NeoLanguage = api;
 })(globalThis);

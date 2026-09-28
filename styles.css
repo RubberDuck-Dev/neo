@@ -976,6 +976,8 @@ body.bright .show-scrollbar::-webkit-scrollbar-thumb:hover { background: rgba(25
 .pub-modal section[data-panel] { min-height: 470px; }
 .pub-note { background: color-mix(in srgb, var(--accent) 14%, transparent); border-radius: 6px; padding: 8px 10px; font-size: 13px; }
 .pub-byline { margin-top: 12px; font-size: 12px; }
+.pub-book-language { border-top: 1px solid var(--line); margin-top: 18px; padding-top: 10px; }
+.pub-book-language .soft { font-size: 12px; margin: 8px 0 0; }
 .ms-modal label.sync-switch { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--ui-text); }
 .ms-modal label.sync-switch input { width: auto; display: inline-block; margin: 0; accent-color: var(--accent); }
 .pub-modal .sync-actions button[data-fill] { color: var(--accent); padding: 2px 0; font-size: 12px; }

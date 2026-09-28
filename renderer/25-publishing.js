@@ -165,10 +165,22 @@ function hasSubmissionDetails(author) {
   return !!(s.legalName || s.address || s.email || s.phone);
 }
 
+const manuscriptLanguages = [
+  ["en", "English"], ["en-US", "English (US)"], ["en-GB", "English (UK)"],
+  ["en-CA", "English (Canada)"], ["en-AU", "English (Australia)"],
+  ["fr", "French"], ["es", "Spanish"],
+  ["de", "German"], ["it", "Italian"], ["pt", "Portuguese"],
+  ["nl", "Dutch"], ["ru", "Russian"], ["zh-Hans", "Chinese (Simplified)"],
+  ["zh-Hant", "Chinese (Traditional)"], ["ja", "Japanese"],
+  ["ko", "Korean"], ["ar", "Arabic"], ["hi", "Hindi"]
+];
+
 function openPublishingDetails({ tab = "manuscript", exportAfter = false } = {}) {
   const author = book ? authorForBook() : currentAuthor();
   const sub = author.submission || {};
   const m = author.endMatter || {};
+  const bookLanguage = book ? NeoLanguage.manuscriptLanguage(book) : "";
+  const knownLanguage = manuscriptLanguages.some(([code]) => code === bookLanguage);
   document.querySelector(".pub-backdrop")?.remove();
   const bd = document.createElement("div");
   bd.className = "modal-backdrop pub-backdrop";
@@ -190,6 +202,10 @@ function openPublishingDetails({ tab = "manuscript", exportAfter = false } = {})
           <label>Email <input data-f="email" value="${escHtml(sub.email || "")}"/></label>
         </div>
         <p class="soft pub-byline">Byline: <strong>${escHtml(author.name || "Anonymous")}</strong>, your pen name. Change it on the shelf or on a title page.</p>
+        ${book ? `<div class="pub-book-language"><label>Language of “${escHtml(book.title || "Untitled")}”
+          <select id="pub-language">${manuscriptLanguages.map(([code, name]) => `<option value="${code}"${bookLanguage === code ? " selected" : ""}>${name}</option>`).join("")}<option value="other"${knownLanguage ? "" : " selected"}>Other language…</option></select></label>
+          <label id="pub-language-other-row"${knownLanguage ? " hidden" : ""}>Language tag <input id="pub-language-other" value="${knownLanguage ? "" : escHtml(bookLanguage)}" placeholder="e.g. sw or cy"/></label>
+          <p class="soft">Set from your spellcheck choice when the book was created. Change it here for exports and writing tools.</p><p class="dialog-error" role="status"></p></div>` : ""}
       </section>
 
       <section data-panel="matter">
@@ -211,6 +227,10 @@ function openPublishingDetails({ tab = "manuscript", exportAfter = false } = {})
     bd.querySelector(`[data-panel="${name}"] input, [data-panel="${name}"] textarea`)?.focus();
   };
   bd.querySelectorAll("[data-tab]").forEach((b) => (b.onclick = () => show(b.dataset.tab)));
+  const languageSelect = bd.querySelector("#pub-language");
+  if (languageSelect) languageSelect.onchange = () => {
+    bd.querySelector("#pub-language-other-row").hidden = languageSelect.value !== "other";
+  };
   show(tab);
 
   const close = () => bd.remove();
@@ -225,9 +245,24 @@ function openPublishingDetails({ tab = "manuscript", exportAfter = false } = {})
     if (!titles.length) toast("No other titles on this pen name’s shelves yet");
   };
   bd.querySelector(".m-ok").onclick = async () => {
+    let nextLanguage = "";
+    if (languageSelect) {
+      const raw = languageSelect.value === "other" ? bd.querySelector("#pub-language-other").value.trim() : languageSelect.value;
+      try { nextLanguage = Intl.getCanonicalLocales(raw)[0]; if (!nextLanguage) throw new Error("empty tag"); }
+      catch {
+        show("manuscript");
+        bd.querySelector(".pub-book-language [role='status']").textContent = "Choose a language, or enter a tag such as sw or cy.";
+        bd.querySelector(languageSelect.value === "other" ? "#pub-language-other" : "#pub-language").focus();
+        return;
+      }
+    }
     author.submission = Object.fromEntries([...bd.querySelectorAll("[data-f]")].map((el) => [el.dataset.f, el.value.trim()]));
     author.endMatter = Object.fromEntries([...bd.querySelectorAll("[data-m]")].map((el) => [el.dataset.m, el.value.trim()]));
     await window.neo.writeLibrary(library);
+    if (book && nextLanguage && book.language !== nextLanguage) {
+      book.language = nextLanguage;
+      scheduleMetaSave();
+    }
     const include = bd.querySelector("[data-include]");
     if (include && book && book.endMatterOff !== !include.checked) {
       book.endMatterOff = !include.checked;

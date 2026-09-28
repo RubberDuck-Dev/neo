@@ -101,9 +101,9 @@ test("export language is independent of dictionary selection", async (t) => {
   try {
     await r.openBook();
     assert.equal(await r.page.evaluate(() => bookExportData().language), "en");
-    await r.menu({ type: "bookSettings" });
-    await r.page.fill("#st-language", "de");
-    await r.page.click(".settings-dialog .m-ok");
+    await r.menu({ type: "publishingDetails" });
+    await r.page.selectOption("#pub-language", "de");
+    await r.page.click(".pub-modal .m-ok");
     assert.equal(await r.page.evaluate(() => bookExportData().language), "de");
     assert.equal(await r.page.evaluate(() => library.spellLanguage), "fr");
     assert.deepEqual(r.errors, []);

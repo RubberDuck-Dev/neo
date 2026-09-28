@@ -15,6 +15,20 @@ Get the latest installer from the **[Releases page](../../releases)**:
 
 - **Linux** — download the `.AppImage`, make it executable with `chmod +x NEO-*.AppImage`, then run `./NEO-*.AppImage`. If the system reports an Electron sandbox startup error, upstream documents `--no-sandbox` as a workaround. New Linux libraries use `~/Documents/NEO-Library`; existing library paths are preserved.
 
+## Added in this fork
+
+This branch builds on [hughhowey/neo](https://github.com/hughhowey/neo). The main additions are:
+
+- **Plugin Library:** Enable tools from ✦ Plugins, per author where appropriate. Disabling a plugin keeps its saved data. The tools have separate files and settings instead of crowding the editor.
+- **GitHub backup and local versions:** Connect an empty private repository for optional background library backups. File → Saving & Recovery keeps local checkpoints, chapter-by-chapter comparison, and restore separate from the GitHub backup tab.
+- **Pinnable panes:** Pin the chapter list or Notes pane open beside the manuscript; unpinned panes still tuck away when you leave them.
+- **Read Aloud and Revision Pass:** Listen from the caret or a selection with sentence highlighting; mark repeated words, filler, adverbs, and inconsistent names only when you start a revision pass.
+- **Publishing details:** File → Publishing Details stores an author's submission contact block and reusable end matter. Export a standard-submission Word document, or add the author's Also By, bio, and copyright text to ordinary exports. A book can omit the end matter.
+- **Outline Cards and Story Map:** Toggle Cards inside Outline to plan with movable index cards tied to the same chapters and section notes. Story Map adds acts, beats, threads, and progress without changing manuscript prose.
+- **Palette themes:** Choose a preset or make a custom writing-room and page palette in the plugin's Palette Studio, with separate choices for each author.
+- **Writing Sprints:** Enable the plugin for a timed or word-target sprint in Progress & Goals; pause or stop it from the counter.
+- **Library and chapter tools:** Search every book, mark chapters Draft/Revised/Done, move books between authors, reshelve books found on disk, and remove a shelf without deleting its books.
+
 ## Why NEO?
 
 **The bookshelf** 
@@ -87,7 +101,7 @@ Continuous autosave, daily zip backups kept for two weeks, everything stored as 
 
 Optional local checkpoints preserve complete book states while you write. Browse them from File → Saving & Recovery; Compare shows exactly what changed since any version, chapter by chapter, before you decide to restore it. Enable GitHub backup in ✦ Plugins, then use the GitHub backup tab in File → Saving & Recovery (or its Plugin Library settings) to connect an empty GitHub repository for the entire NEO Library. NEO creates its local history automatically, and you can opt into background GitHub backups after each version. NEO never creates a public repository. New computer? "Set up this computer from a backup…" in GitHub backup settings downloads the library and picks up the backups where they left off; anything already on that computer is set aside, not deleted.
 
-Spellcheck uses bundled offline dictionaries, loaded only when needed. Choose a book’s manuscript language in File → Book Settings; it controls export metadata independently of the spellcheck dictionary. Revision Pass currently supports English manuscripts.
+Spellcheck uses bundled offline dictionaries, loaded only when needed. New and imported books take their manuscript language from the selected dictionary. Change one book’s language by name in File → Publishing Details → Manuscript; it controls export metadata independently of the dictionary. Revision Pass currently supports English manuscripts.
 
 ## Your files
 
@@ -98,7 +112,7 @@ New Linux libraries live in `~/Documents/NEO-Library`; macOS and Windows default
 Requires [Node.js](https://nodejs.org).
 
 ```
-git clone https://github.com/hughhowey/neo.git
+git clone https://github.com/RubberDuck-Dev/neo.git
 cd neo
 npm install
 npm start
@@ -111,10 +125,6 @@ restart the app automatically.
 To build installers: `npm install electron-builder --save-dev`, then `npm run package` (macOS), `npm run package:win` (Windows), or `npm run package:all`. Output lands in `dist/`.
 
 The app uses an Electron shell (`main.js`), focused services in `main/`, a preload bridge (`preload.js`), and a plain-JavaScript renderer. Bundled optional tools live in `plugins/`, each with its own implementation and styles. `renderer/plugin-host/` connects them to the writing room and presents the Plugin Library. Shared text rules and language metadata live in `shared/`. See [CONTRIBUTING.md](CONTRIBUTING.md) for the boundaries and how to add a plugin.
-
-## Roadmap (things I'm dreaming up but may never get to):
-
-Chapter version history · manuscript format for agent submissions (Times New Roman, double-spaced, address block, just to make Kristin Nelson happy) · global end matter that updates every book at once (same for copyright pages, bios, etc).
 
 ## Contributing
 

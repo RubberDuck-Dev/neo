@@ -873,6 +873,7 @@ async function refreshCover(meta, el) {
 
 async function createBookOnShelf(shelf) {
   const meta = await window.neo.createBook({ author: displayAuthor() });
+  meta.language = NeoLanguage.defaultManuscriptLanguage(library);
   meta.tabNames = {
     notes: (library.tabDefaults && library.tabDefaults.notes) || "Notes",
     outline: (library.tabDefaults && library.tabDefaults.outline) || "Outline",

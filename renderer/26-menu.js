@@ -28,7 +28,6 @@ window.neo.onMenu(async (msg) => {
   if (msg.type === "reshelve") reshelveBook();
   if (msg.type === "import") importBooks();
   if (msg.type === "preferences") openPreferences();
-  if (msg.type === "bookSettings") openBookSettings();
   if (msg.type === "readAloudSettings") openReadAloudSettings();
   if (msg.type === "stats") openStats();
   if (msg.type === "syncSettings") openSyncSettings();

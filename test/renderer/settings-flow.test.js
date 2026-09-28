@@ -43,12 +43,12 @@ test('GitHub setup stays separate from local saving and a failed first upload ca
   } finally { await r.close(); }
 });
 
-test('goals preview and book language respect Cancel, and Save applies only their own settings', async t => {
+test('goals preview and publishing language respect Cancel, and Save applies only their own settings', async t => {
   if (skip(t)) return;
   const r=await openNeo();
   try {
     await r.openBook(); await r.menu({type:'stats'});
-    assert.equal(await r.page.locator('#ra-voice, #st-language, #st-dayends').count(),0);
+    assert.equal(await r.page.locator('#ra-voice, #pub-language, #st-dayends').count(),0);
     await r.page.fill('#st-book','90000'); await r.page.fill('#st-daily','600');
     await r.page.click('[data-chart-mode="cumulative"]');
     assert.equal(await r.page.evaluate(()=>book.wordGoal),0);
@@ -56,11 +56,11 @@ test('goals preview and book language respect Cancel, and Save applies only thei
     assert.equal(await r.page.evaluate(()=>book.wordGoal),0);
     await r.menu({type:'stats'}); await r.page.fill('#st-book','70000'); await r.page.click('.m-ok');
     assert.equal(await r.page.evaluate(()=>book.wordGoal),70000);
-    await r.menu({type:'bookSettings'}); await r.page.fill('#st-language','fr'); await r.page.keyboard.press('Escape');
+    await r.menu({type:'publishingDetails'}); await r.page.selectOption('#pub-language','fr'); await r.page.keyboard.press('Escape');
     assert.equal(await r.page.evaluate(()=>NeoLanguage.manuscriptLanguage(book)),'en');
-    await r.menu({type:'bookSettings'}); await r.page.fill('#st-language','not_a_tag'); await r.page.click('.m-ok');
-    assert.match(await r.page.locator('.dialog-error').textContent(),/language tag/);
-    await r.page.fill('#st-language','fr'); await r.page.click('.m-ok');
+    await r.menu({type:'publishingDetails'}); await r.page.selectOption('#pub-language','other'); await r.page.fill('#pub-language-other','not_a_tag'); await r.page.click('.pub-modal .m-ok');
+    assert.match(await r.page.locator('.pub-book-language .dialog-error').textContent(),/language/);
+    await r.page.selectOption('#pub-language','fr'); await r.page.click('.pub-modal .m-ok');
     assert.equal(await r.page.evaluate(()=>book.language),'fr');
     assert.deepEqual(r.errors,[]);
   } finally { await r.close(); }
