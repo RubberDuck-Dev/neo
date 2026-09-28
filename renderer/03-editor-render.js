@@ -14,9 +14,12 @@ async function openBook(bookId) {
   currentChapterId = null; // never carry a chapter reference across books
   undoStack = [];
   chapterHTML = {};
+  savedHTML = {};
   for (const chId of book.chapterOrder) {
     chapterHTML[chId] = await window.neo.readChapter(bookId, chId);
+    savedHTML[chId] = chapterHTML[chId];
   }
+  savedMetaSig = metaSig(book);
   stickies = await window.neo.readJSON(bookId, "stickies", []);
   darlings = await window.neo.readJSON(bookId, "darlings", []);
 

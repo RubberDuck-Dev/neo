@@ -174,7 +174,9 @@ test("closing a book waits for outstanding card writes", async (t) => {
     await r.page.click('[data-outline-view="cards"]');
     await r.page.evaluate(()=>{window.__holdCards=true;});
     await r.page.click(".add-card");
-    await r.page.waitForFunction(() => window.__cardWrites?.length >= 2);
+    // Metadata writes are serialized now, so only the first reaches the bridge
+    // until it is released; the close must still wait for that pending write.
+    await r.page.waitForFunction(() => window.__cardWrites?.length >= 1);
     await r.page.click("#back-to-shelf");
     assert.equal(await r.page.locator("#editor-view").isVisible(), true);
     await r.page.evaluate(() => window.__finishCards());

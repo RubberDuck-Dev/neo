@@ -125,3 +125,21 @@ test('Pocket iOS uses LibraryHome URLs and requests cloud files before reading',
     assert.deepEqual(errors,[]);
   }finally{await browser.close();}
 });
+
+test('Pocket format sheet changes page, drop cap, and keyboard mode', async t => {
+  if(!launchable)return t.skip('Chromium unavailable');
+  const {browser,page,errors}=await openPocket(true);
+  try {
+    await page.click('.book');
+    await page.click('#pocket-more');
+    assert.equal(await page.locator('#pocket-menu').isVisible(),true);
+    await page.locator('#pocket-menu [data-msg*="dropCap"][data-msg*="none"]').click();
+    await page.waitForTimeout(100);
+    await page.locator('#pocket-menu [data-msg*="pageTheme"][data-msg*="paper"]').click();
+    await page.locator('#pocket-menu [data-act="keyboard"]').click();
+    assert.equal(await page.evaluate(()=>window.pocketSoftKeyboardOn()),false);
+    await page.locator('#pocket-menu [data-act="close"]').click();
+    assert.equal(await page.locator('#pocket-menu').isVisible(),false);
+    assert.deepEqual(errors,[]);
+  }finally{await browser.close();}
+});

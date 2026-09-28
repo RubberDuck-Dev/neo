@@ -48,6 +48,32 @@ function insertPlaceholder() {
   scheduleChapterSave(currentChapterId);
   renderStickies();
   scheduleNavRefresh();
+  const pane = $('#side-pane');
+  pane.dataset.autoOpened = pane.classList.contains('open') ? '0' : '1';
+  focusSticky(sid);
+}
+
+function returnToMark(sid) {
+  if (currentTab !== 'manuscript') switchTab('manuscript');
+  const mark = document.querySelector(`.ph-mark[data-sid="${sid}"]`);
+  const location = mark ? null : stickyLocation(stickies.find(s => s.id === sid));
+  const anchor = mark || location?.startContainer;
+  const target = anchor?.nodeType === Node.TEXT_NODE ? anchor.parentElement : anchor;
+  if (!target) return;
+  const scroller = $('#paper-scroll'), rect = target.getBoundingClientRect(), screen = scroller.getBoundingClientRect();
+  if (rect.top < screen.top + 40 || rect.bottom > screen.bottom - 40) target.scrollIntoView({behavior:'smooth',block:'center'});
+  const body = target.closest('.chapter-body');
+  if (!body) return;
+  currentChapterId = body.closest('.chapter').dataset.id;
+  body.focus({preventScroll:true});
+  const range = location || document.createRange();
+  const next = mark?.nextSibling;
+  if (next?.nodeType === Node.TEXT_NODE) range.setStart(next, Math.min(1,next.textContent.length));
+  else if (mark) range.setStartAfter(mark);
+  else if (!location) range.setStartBefore(target);
+  range.collapse(true);
+  const selection = window.getSelection(); selection.removeAllRanges(); selection.addRange(range);
+  highlightNav();
 }
 
 function renderStickies() {
@@ -81,16 +107,16 @@ function renderStickies() {
         600,
       );
     });
+    ta.addEventListener('keydown', event => {
+      if (event.key !== 'Enter' || event.shiftKey) return;
+      event.preventDefault();
+      const pane = $('#side-pane');
+      if (pane.dataset.autoOpened === '1' && pane.dataset.pinned !== '1') pane.classList.remove('open');
+      pane.dataset.autoOpened = '0';
+      returnToMark(s.id);
+    });
     const go = el.querySelector(".s-go");
-    if (go)
-      go.onclick = () => {
-        switchTab("manuscript");
-        const mark = document.querySelector(`.ph-mark[data-sid="${s.id}"]`);
-        const target = mark || stickyLocation(s)?.startContainer;
-        const el = target?.nodeType === Node.TEXT_NODE ? target.parentElement : target;
-        if (el) el.scrollIntoView({ behavior: "smooth", block: "center" });
-        else toast('This note’s chapter is no longer available');
-      };
+    if (go) go.onclick = () => returnToMark(s.id);
     const done = el.querySelector(".s-done");
     if (done) done.onclick = () => setStickyResolved(s.id);
     el.querySelector('.s-reopen')?.addEventListener('click', () => reopenSticky(s.id));

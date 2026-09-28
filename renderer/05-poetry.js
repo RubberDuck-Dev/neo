@@ -499,7 +499,7 @@ function createChapterAt(idx) {
     Math.random().toString(36).slice(2, 6);
   book.chapterOrder.splice(idx, 0, chId);
   chapterHTML[chId] = "<p><br></p>";
-  window.neo.writeChapter(book.id, chId, chapterHTML[chId]);
+  persistChapter(chId);
   saveMeta();
   renderChapters();
   return chId;
@@ -519,8 +519,10 @@ async function deleteChapterQuiet(chId) {
   clearTimeout(saveTimers[chId]);
   delete saveTimers[chId];
   dirtyChapters.delete(chId);
+  await chapterWrites.get(book.id + '/' + chId);
   book.chapterOrder = book.chapterOrder.filter((c) => c !== chId);
   delete chapterHTML[chId];
+  delete savedHTML[chId];
   delete wordCache[chId];
   if (book.sectionNotes) delete book.sectionNotes[chId];
   if (book.chapterNotes) delete book.chapterNotes[chId];

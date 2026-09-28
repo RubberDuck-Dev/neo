@@ -2,7 +2,7 @@
 // Owns the window and all file-system access. The renderer talks to this
 // through the IPC handlers below (see preload.js for the exposed API).
 
-const { app, BrowserWindow, ipcMain, dialog, Menu, MenuItem, utilityProcess } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, Menu, MenuItem, utilityProcess, screen } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
@@ -277,7 +277,7 @@ ipcMain.handle('book:writeMeta', async (_e, bookId, meta) => {
     meta.modified = new Date().toISOString();
     writeJSON(path.join(bookDir(bookId), 'book.json'), meta);
     writeCatalog();
-    return true;
+    return meta.modified;
   });
 });
 
@@ -667,16 +667,48 @@ const decodeEntities = (s) => s
   .replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>')
   .replace(/&quot;/g, '"').replace(/&apos;/g, "'");
 
-// Check if a formatting tag (<w:b>, <w:i>) is actually ON
+// Is a formatting tag (<w:b>, <w:i>) present, and is it on? Returns true,
+// false (present but switched off — Word writes <w:i w:val="0"/> to cancel
+// a style's italics), or undefined when the run says nothing about it.
 function docxFormatOn(rpr, tag) {
   const hit = rpr.match(new RegExp('<' + tag + '(?:\\s[^>]*)?/?>'));
-  if (!hit) return false;
+  if (!hit) return undefined;
   const val = (hit[0].match(/w:val="([^"]*)"/) || [])[1];
   return val === undefined || /^(true|1|on)$/i.test(val);
 }
 
+// Italics and bold don't always sit on the run: a manuscript may carry them
+// in a character style ("Emphasis", Scrivener's "Italic") or a paragraph
+// style. Read word/styles.xml once into { styleId: { bold, italic } },
+// following basedOn so a style built on an italic one stays italic.
+function docxStyleFormats(stylesXml) {
+  const out = {};
+  if (!stylesXml) return out;
+  const raw = {};
+  for (const m of stylesXml.matchAll(/<w:style\s[^>]*w:styleId="([^"]+)"[^>]*>([\s\S]*?)<\/w:style>/g)) {
+    const body = m[2];
+    const basedOn = (body.match(/<w:basedOn\s+w:val="([^"]+)"/) || [])[1];
+    // only the style's own run properties, not the paragraph-mark ones
+    const rpr = (body.match(/<w:rPr>[\s\S]*?<\/w:rPr>/) || [''])[0];
+    raw[m[1]] = { basedOn, bold: docxFormatOn(rpr, 'w:b'), italic: docxFormatOn(rpr, 'w:i') };
+  }
+  const resolve = (id, depth) => {
+    if (out[id]) return out[id];
+    const st = raw[id];
+    if (!st || depth > 8) return { bold: false, italic: false };
+    const base = st.basedOn ? resolve(st.basedOn, depth + 1) : { bold: false, italic: false };
+    out[id] = {
+      bold: st.bold === undefined ? base.bold : st.bold,
+      italic: st.italic === undefined ? base.italic : st.italic
+    };
+    return out[id];
+  };
+  for (const id of Object.keys(raw)) resolve(id, 0);
+  return out;
+}
+
 // Convert one Word paragraph's bold/italic XML into markdown text with bold/italic
-function docxParagraphToMarkdown(p) {
+function docxParagraphToMarkdown(p, styles = {}) {
   const pageBreak = /<w:br [^>]*w:type="page"/.test(p) || /<w:pageBreakBefore/.test(p);
   // Word marks headings with a paragraph style such as <w:pStyle w:val="Heading1"/>.
   // Any heading style (Heading1..9, or bare "Heading") starts a new chapter and
@@ -688,12 +720,18 @@ function docxParagraphToMarkdown(p) {
   // line, and the book's own title page uses the same style: the first one
   // names the book, later ones start chapters (see chapterize)
   const title = /^title$/i.test(pStyle);
+  // what the paragraph's style says, before any run has its say
+  const pBase = styles[pStyle] || { bold: false, italic: false };
   const runs = [...p.matchAll(/<w:r[ >][\s\S]*?<\/w:r>/g)].map((rm) => {
     const r = rm[0];
     const rpr = (r.match(/<w:rPr>[\s\S]*?<\/w:rPr>/) || [''])[0];
     const text = [...r.matchAll(/<w:t(?:\s[^>]*)?>([\s\S]*?)<\/w:t>/g)]
       .map((t) => decodeEntities(t[1])).join('');
-    return { text, bold: docxFormatOn(rpr, 'w:b'), italic: docxFormatOn(rpr, 'w:i') };
+    const rStyle = (rpr.match(/<w:rStyle\s+w:val="([^"]*)"/) || [])[1];
+    const rBase = rStyle && styles[rStyle] ? styles[rStyle] : pBase;
+    const b = docxFormatOn(rpr, 'w:b');
+    const i = docxFormatOn(rpr, 'w:i');
+    return { text, bold: b === undefined ? !!rBase.bold : b, italic: i === undefined ? !!rBase.italic : i };
   });
   // make sure **one**"+"**two**" becomes one "**onetwo**", not "**one****two**"
   const merged = [];
@@ -722,8 +760,11 @@ async function importFile(fp) {
     const docFile = zip.file('word/document.xml');
     if (!docFile) throw new Error('Not a valid .docx: ' + fp);
     const xml = await docFile.async('string');
+    const stylesFile = zip.file('word/styles.xml');
+    const styles = docxStyleFormats(stylesFile ? await stylesFile.async('string') : '');
     paras = [...xml.matchAll(/<w:p[ >][\s\S]*?<\/w:p>/g)]
-      .map((m) => docxParagraphToMarkdown(m[0]));  } else {
+      .map((m) => docxParagraphToMarkdown(m[0], styles));
+  } else {
     const raw = fs.readFileSync(fp, 'utf8');
     paras = raw.split(/\r?\n\s*\r?\n/)
       .map((b) => ({ text: b.replace(/\s*\r?\n\s*/g, ' ').trim(), pageBreak: false }))
@@ -1097,9 +1138,19 @@ async function changeLibraryLocation(chosenTarget = null) {
 // Window
 // ---------------------------------------------------------------------------
 function createWindow() {
+  const saved = readSettings().window || {};
+  let bounds = { width: 1200, height: 800 };
+  if (saved.width >= 800 && saved.height >= 600) {
+    bounds = { width: saved.width, height: saved.height };
+    if (typeof saved.x === 'number' && typeof saved.y === 'number') {
+      const visible = screen.getAllDisplays().some(({ workArea: area }) =>
+        saved.x + 100 < area.x + area.width && saved.x + saved.width - 100 > area.x &&
+        saved.y + 40 < area.y + area.height && saved.y >= area.y - 20);
+      if (visible) Object.assign(bounds, { x: saved.x, y: saved.y });
+    }
+  }
   const win = new BrowserWindow({
-    width: 1200,
-    height: 800,
+    ...bounds,
     minWidth: 800,
     minHeight: 600,
     titleBarStyle: 'hiddenInset',
@@ -1115,6 +1166,15 @@ function createWindow() {
     }
   });
   win.loadFile('index.html');
+  let boundsTimer;
+  const rememberBounds = () => {
+    if (win.isDestroyed() || win.isFullScreen() || win.isMinimized()) return;
+    clearTimeout(boundsTimer);
+    boundsTimer = setTimeout(() => writeSettings({ ...readSettings(), window: win.getNormalBounds() }), 250);
+  };
+  win.on('resize', rememberBounds);
+  win.on('move', rememberBounds);
+  win.on('close', () => { clearTimeout(boundsTimer); if (!win.isFullScreen() && !win.isMinimized()) writeSettings({ ...readSettings(), window: win.getNormalBounds() }); });
 
   // The renderer flushes its in-memory chapter state first; only then do we
   // let Electron close. This gives queued, atomic writes a chance to finish.
@@ -1335,7 +1395,9 @@ function buildMenu() {
           submenu: [
             { label: 'Literary', click: () => sendToWindow({ type: 'dropCap', value: 'literary' }) },
             { label: 'Fantasy', click: () => sendToWindow({ type: 'dropCap', value: 'fantasy' }) },
-            { label: 'Sci-Fi', click: () => sendToWindow({ type: 'dropCap', value: 'scifi' }) }
+            { label: 'Sci-Fi', click: () => sendToWindow({ type: 'dropCap', value: 'scifi' }) },
+            { type: 'separator' },
+            { label: 'Off', click: () => sendToWindow({ type: 'dropCap', value: 'none' }) }
           ]
         }
       ]

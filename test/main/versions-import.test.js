@@ -56,6 +56,26 @@ test('Google Docs Title-styled tabs become a book title and chapter boundaries',
   assert.equal(book.chapters.length,2);
 });
 
+test('DOCX import preserves inherited italics and explicit formatting overrides', async () => {
+  const JSZip = require('jszip'), zip = new JSZip();
+  zip.file('word/styles.xml', `<w:styles>
+    <w:style w:styleId="Emphasis"><w:rPr><w:i/></w:rPr></w:style>
+    <w:style w:styleId="Inherited"><w:basedOn w:val="Emphasis"/></w:style>
+    <w:style w:styleId="ParaItalic"><w:rPr><w:i/></w:rPr></w:style>
+  </w:styles>`);
+  zip.file('word/document.xml', `<w:document><w:body>
+    <w:p><w:r><w:rPr><w:rStyle w:val="Inherited"/></w:rPr><w:t>Styled italic</w:t></w:r></w:p>
+    <w:p><w:pPr><w:pStyle w:val="ParaItalic"/></w:pPr><w:r><w:t>Paragraph italic</w:t></w:r><w:r><w:rPr><w:i w:val="0"/></w:rPr><w:t> plain</w:t></w:r></w:p>
+  </w:body></w:document>`);
+  const file = path.join(neo.home, 'styled.docx');
+  fs.writeFileSync(file, await zip.generateAsync({type:'nodebuffer'}));
+  const [book] = await neo.call('import:files',[file]);
+  const text = JSON.stringify(book.chapters);
+  assert.match(text,/\*Styled italic\*/);
+  assert.match(text,/\*Paragraph italic\*/);
+  assert.doesNotMatch(text,/\* plain\*/);
+});
+
 test('reshelving can discover books without shelf membership', async () => {
   neo.write('book-unshelved/book.json',{id:'book-unshelved',title:'Forgotten',author:'Writer'});
   const books=await neo.call('library:listBooks');

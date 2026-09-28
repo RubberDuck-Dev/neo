@@ -6,6 +6,8 @@
 let library = null; // library.json
 let book = null; // current book.json
 let chapterHTML = {}; // chapterId -> html (loaded at open)
+let savedHTML = {}; // chapterId -> last confirmed disk content
+let savedMetaSig = '';
 let stickies = []; // [{id, chapterId, text, resolved}]
 let darlings = []; // [{id, html, text, chapterId, chapterLabel, date}]
 let currentTab = "manuscript";

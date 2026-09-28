@@ -8,12 +8,34 @@
 
 /* touch has no hover: the panes open on an edge swipe (see index.html) or the ☰ button */
 #nav-hotzone, #side-hotzone { display: none; }
-#pocket-chapters {
-  position: fixed; top: 12px; left: 12px; z-index: 500;
-  width: 44px; height: 44px; border-radius: 10px;
-  background: rgba(30, 30, 30, 0.85); color: #b9b4a8;
-  border: 1px solid #3a3a3a; font-size: 20px;
+#pocket-chapters, #pocket-more {
+  background: none; border: none; color: #b9b4a8; font-size: 20px;
+  padding: 0 10px; min-width: 44px;
 }
+#pocket-more { margin-left: auto; }
+
+/* the ⋯ sheet */
+#pocket-menu {
+  position: fixed; inset: 0; z-index: 900; background: rgba(0, 0, 0, 0.45);
+  display: flex; align-items: flex-end; justify-content: center;
+}
+#pocket-menu-sheet {
+  width: min(560px, 100%); max-height: 80vh; overflow-y: auto;
+  background: #1e1e1e; border: 1px solid #333; border-bottom: none;
+  border-radius: 14px 14px 0 0; padding: 14px 18px 18px; color: #d6d2c6;
+  font: 15px/1.4 -apple-system, BlinkMacSystemFont, "Helvetica Neue", sans-serif;
+}
+.pm-row { display: flex; align-items: center; gap: 12px; padding: 9px 0; border-bottom: 1px solid #2a2a2a; }
+.pm-row:last-child { border-bottom: none; }
+.pm-label { flex: 0 0 150px; color: #9a958a; font-size: 14px; }
+.pm-seg { display: flex; gap: 6px; flex: 1; justify-content: flex-end; }
+.pm-seg.pm-wrap { flex-wrap: wrap; }
+.pm-seg button, .pm-actions button {
+  background: #2a2a2a; border: 1px solid #3a3a3a; color: #d6d2c6; border-radius: 8px;
+  padding: 7px 12px; font-size: 14px; min-height: 36px;
+}
+.pm-seg button.on { background: #3a3427; border-color: #7a6a3a; color: #e9d9a8; }
+.pm-actions { justify-content: flex-end; gap: 8px; padding-top: 14px; }
 #nav-pane.open { transform: translateX(0); }
 
 /* desktop-only powers stay out of sight */
@@ -35,3 +57,9 @@ button, .b-refresh, #nav-add, #back-to-shelf { min-height: 40px; }
 /* Desktop-only: pinning panes, and the GitHub backup plugin (Pocket shares
    the library through Syncthing instead) */
 #nav-pin { display: none !important; }
+
+@media (max-width: 640px) {
+  .pm-row { align-items: flex-start; flex-direction: column; }
+  .pm-label { flex: none; }
+  .pm-seg { justify-content: flex-start; }
+}

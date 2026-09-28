@@ -27,10 +27,11 @@ async function checkpointNow(reason, bookId = book && book.id) {
   if (typeof window.neo.createCheckpoint !== "function") return; // NEO Pocket has no version history
   clearTimeout(checkpointTimer);
   checkpointTimer = null;
-  // The main process queues these writes before the checkpoint request, so a
-  // checkpoint always captures one coherent on-disk state.
   flushAllSaves();
   await NeoPlugins.flush();
+  // Chapter and metadata writes are serialized in the renderer. Wait for
+  // their queues before asking the main process to snapshot the book.
+  await waitForBookWrites();
   return window.neo.createCheckpoint(bookId, reason).catch((err) => {
     window.neo.logError(`checkpoint: ${err && err.stack ? err.stack : err}`);
   }).then((result) => {
@@ -54,6 +55,28 @@ function finishPendingCheckpoint(reason) {
   return checkpointNow(reason);
 }
 
+// Track the last confirmed disk state. A shared library must not rewrite
+// unchanged chapters on blur or when a checkpoint is taken.
+const chapterWrites = new Map();
+function persistChapter(chId, html = chapterHTML[chId] || '') {
+  if (!book) return Promise.resolve(false);
+  const bookId = book.id, key = bookId + '/' + chId;
+  dirtyChapters.add(chId);
+  const previous = chapterWrites.get(key) || Promise.resolve();
+  const work = previous.then(() => window.neo.writeChapter(bookId, chId, html))
+    .then(() => {
+      if (book?.id === bookId && book.chapterOrder.includes(chId)) {
+        savedHTML[chId] = html;
+        if (chapterHTML[chId] === html) dirtyChapters.delete(chId);
+      }
+      lastSavedAt = new Date();
+      return true;
+    }).catch(err => { window.neo.logError(`chapter save: ${err?.stack || err}`); return false; });
+  chapterWrites.set(key, work);
+  work.finally(() => { if (chapterWrites.get(key) === work) chapterWrites.delete(key); });
+  return work;
+}
+
 function scheduleChapterSave(chId) {
   dirtyChapters.add(chId);
   clearTimeout(saveTimers[chId]);
@@ -61,12 +84,22 @@ function scheduleChapterSave(chId) {
 }
 
 function saveChapterNow(chId) {
-  if (!book || !dirtyChapters.has(chId)) return;
-  const html = chapterHTML[chId] || "";
-  window.neo.writeChapter(book.id, chId, html).then(() => {
-    if (chapterHTML[chId] === html) dirtyChapters.delete(chId);
-    lastSavedAt = new Date();
-  }).catch((err) => window.neo.logError(`chapter save: ${err && err.stack ? err.stack : err}`));
+  if (!book || !book.chapterOrder.includes(chId) || !dirtyChapters.has(chId)) return Promise.resolve(false);
+  return persistChapter(chId);
+}
+
+// Ignore per-device position and counters when comparing shared metadata.
+function metaSig(meta) {
+  if (!meta) return '';
+  const stable = {};
+  for (const key of Object.keys(meta).sort()) {
+    if (['lastPosition','modified','wordCount','dailyCounts'].includes(key)) continue;
+    const value = meta[key];
+    if (value == null || value === '') continue;
+    if (typeof value === 'object' && Object.keys(value).length === 0) continue;
+    stable[key] = value;
+  }
+  return JSON.stringify(stable);
 }
 
 function scheduleMetaSave() {
@@ -75,28 +108,46 @@ function scheduleMetaSave() {
   saveTimers.meta = setTimeout(() => saveMeta(false), 800);
   scheduleCheckpoint("writing");
 }
-async function saveMeta(force = true) {
-  if (book && (force || metaSavePending)) {
-    book.modified = new Date().toISOString();
-    await window.neo.writeBookMeta(book.id, book);
-    metaSavePending = false;
-    lastSavedAt = new Date();
-  }
+let metaWriteQueue = Promise.resolve();
+function saveMeta(force = true) {
+  if (!book || (!force && !metaSavePending)) return Promise.resolve(false);
+  const bookId = book.id, sig = metaSig(book), snapshot = structuredClone(book);
+  metaWriteQueue = metaWriteQueue.catch(() => {}).then(async () => {
+    const stamp = await window.neo.writeBookMeta(bookId, snapshot);
+    if (book?.id === bookId) {
+      if (typeof stamp === 'string') book.modified = stamp;
+      savedMetaSig = sig;
+      metaSavePending = metaSig(book) !== sig;
+      if (metaSavePending) scheduleMetaSave();
+      lastSavedAt = new Date();
+    }
+    return true;
+  }).catch(err => { window.neo.logError(`meta save: ${err?.stack || err}`); return false; });
+  return metaWriteQueue;
 }
 
 function flushAllSaves() {
   if (!book) return;
-  const position = {
-    chapterId: currentChapterId,
-    scroll: $("#paper-scroll").scrollTop,
-  };
-  if (!book.lastPosition || book.lastPosition.chapterId !== position.chapterId || book.lastPosition.scroll !== position.scroll) {
-    book.lastPosition = position;
-    metaSavePending = true;
+  const position = {chapterId:currentChapterId, scroll:$('#paper-scroll').scrollTop};
+  if (!book.lastPosition || book.lastPosition.chapterId !== position.chapterId || Math.abs((book.lastPosition.scroll || 0) - position.scroll) > 40) {
+    book.lastPosition = position; metaSavePending = true;
   }
-  for (const chId of dirtyChapters) saveChapterNow(chId);
+  for (const chId of book.chapterOrder) {
+    if (chapterHTML[chId] !== undefined && (dirtyChapters.has(chId) || chapterHTML[chId] !== savedHTML[chId]) && !chapterWrites.has(book.id + '/' + chId)) persistChapter(chId);
+  }
   flushAux();
-  saveMeta(false);
+  if (metaSavePending || metaSig(book) !== savedMetaSig) saveMeta();
+}
+
+async function waitForBookWrites() {
+  for (let pass = 0; pass < 3; pass++) {
+    await Promise.all([...chapterWrites.values(), metaWriteQueue]);
+    if (!book) break;
+    const pending = book.chapterOrder.filter(id => chapterHTML[id] !== undefined && chapterHTML[id] !== savedHTML[id]);
+    if (!pending.length && !metaSavePending) break;
+    await Promise.all(pending.map(id => persistChapter(id)));
+    if (metaSavePending) await saveMeta(false);
+  }
 }
 
 window.addEventListener("beforeunload", flushAllSaves);
@@ -115,6 +166,7 @@ async function backToShelf() {
   if (revisionOn) toggleRevisionPass(false);
   stopReadAloud(true);
   flushAllSaves();
+  await waitForBookWrites();
   await finishPendingCheckpoint("closed book");
   tabPlaces = {};
   dirtyChapters = new Set();

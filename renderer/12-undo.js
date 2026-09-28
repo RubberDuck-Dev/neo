@@ -135,11 +135,7 @@ async function structuralUndo() {
   stickies = snap.stickies;
   // resurrect any chapter files the action may have deleted
   for (const chId of book.chapterOrder) {
-    await window.neo.writeChapter(
-      book.id,
-      chId,
-      chapterHTML[chId] || "<p><br></p>",
-    );
+    await persistChapter(chId, chapterHTML[chId] || "<p><br></p>");
   }
   await window.neo.writeJSON(book.id, "darlings", darlings);
   await window.neo.writeJSON(book.id, "stickies", stickies);

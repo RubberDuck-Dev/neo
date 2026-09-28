@@ -71,7 +71,7 @@
   <!-- ======================= EDITOR ======================= -->
   <div id="editor-view" hidden>
 
-    <button id="pocket-chapters" title="Chapters">&#9776;</button>
+
 
     <!-- Left hover zone: chapter navigation -->
     <div id="nav-hotzone"></div>
@@ -116,6 +116,7 @@
 
     <!-- Bottom bar: tabs + counters -->
     <footer id="bottombar">
+      <button id="pocket-chapters" title="Chapters (long-press: keyboard)">&#9776;</button>
       <button id="back-to-shelf" title="Back to your bookshelf">&#8676; Shelf</button>
       <div id="tabs">
         <div class="tab active" data-tab="manuscript">Manuscript</div>
@@ -129,7 +130,9 @@
         <span id="word-counter" title="Click to cycle book / chapter word count"></span>
         <span id="zoom-control" hidden><button id="zoom-out">&#8722;</button><span id="zoom-level">100%</span><button id="zoom-in">+</button></span>
       </div>
+      <button id="pocket-more" title="Format, focus, goals">&#8943;</button>
     </footer>
+    <div id="pocket-menu" hidden><div id="pocket-menu-sheet"></div></div>
 
     <!-- Find & replace -->
     <div id="searchbar" hidden>
@@ -171,6 +174,7 @@
   <script src="renderer/09-outline.js"></script>
   <script src="renderer/10-counters.js"></script>
   <script src="renderer/11-saving.js"></script>
+  <script src="renderer/11-refresh.js"></script>
   <script src="renderer/12-undo.js"></script>
   <script src="renderer/13-library-search.js"></script>
   <script src="renderer/14-find-replace.js"></script>
@@ -244,6 +248,55 @@
       else if (!e.shiftKey && k === 'KeyF') go({ type: 'find' });
       else if (!e.shiftKey && k === 'Comma') go({ type: 'preferences' });
     });
+    // ⋯ opens a sheet of the desktop's Format and View menus. Every row
+    // sends the same message the menu bar would; the page answers as usual.
+    const more = document.getElementById('pocket-more');
+    const menuWrap = document.getElementById('pocket-menu');
+    const sheet = document.getElementById('pocket-menu-sheet');
+    const send = (msg) => { if (window.pocketMenu) window.pocketMenu(msg); };
+    const closeMenu = () => { menuWrap.hidden = true; };
+    function buildMenu() {
+      const lib = (typeof library !== 'undefined' && library) || {};
+      const fonts = lib.fonts || {};
+      const st = window.pocketState || {};
+      const focusNow = (typeof focusLevel !== 'undefined') ? focusLevel : 'off';
+      const seg = (label, opts, current, mk) => `<div class="pm-row"><span class="pm-label">${label}</span><span class="pm-seg">` +
+        opts.map(([v, t]) => `<button class="${v === current ? 'on' : ''}" data-msg='${JSON.stringify(mk(v))}'>${t}</button>`).join('') + '</span></div>';
+      const tick = (label, on, msg) => `<div class="pm-row"><span class="pm-label">${label}</span><span class="pm-seg"><button class="${on ? 'on' : ''}" data-msg='${JSON.stringify(msg)}'>${on ? '✓ On' : 'Off'}</button></span></div>`;
+      const choices = (typeof BODY_FONT_CHOICES !== 'undefined') ? BODY_FONT_CHOICES : ['Georgia'];
+      sheet.innerHTML =
+        `<div class="pm-row pm-fonts"><span class="pm-label">Typeface</span><span class="pm-seg pm-wrap">` +
+          choices.map((f) => `<button class="${fonts.body === f ? 'on' : ''}" data-msg='${JSON.stringify({ type: 'bodyFont', value: f })}' style="font-family:${f}">${f}</button>`).join('') + '</span></div>' +
+        seg('Text size', [[-1, 'Smaller'], [0, 'Reset'], [1, 'Larger']], null, (v) => ({ type: 'fontSize', value: v })) +
+        seg('Drop cap', [['literary', 'Literary'], ['fantasy', 'Fantasy'], ['scifi', 'Sci-Fi'], ['none', 'Off']], fonts.dropcap || 'literary', (v) => ({ type: 'dropCap', value: v })) +
+        seg('Page', [['night', 'Night'], ['paper', 'Paper']], lib.pageTheme || 'night', (v) => ({ type: 'pageTheme', value: v })) +
+        seg('Focus mode', [['off', 'Off'], ['paragraph', 'Paragraph'], ['sentence', 'Sentence']], focusNow, (v) => ({ type: 'focus', value: v })) +
+        tick('Typewriter scrolling', st.typewriter, { type: 'typewriter' }) +
+        tick('Poetry paragraph  ⇧Enter', st.poetry, { type: 'poetry' }) +
+        `<div class="pm-row"><span class="pm-label">On-screen keyboard</span><span class="pm-seg"><button data-act="keyboard">${window.pocketSoftKeyboardOn() ? '✓ On' : 'Off'}</button></span></div>` +
+        `<div class="pm-row pm-actions"><button data-msg='${JSON.stringify({ type: 'stats' })}'>Goals &amp; Settings…</button><button data-msg='${JSON.stringify({ type: 'help' })}'>Keyboard shortcuts</button><button data-act="close">Done</button></div>`;
+    }
+    more.addEventListener('click', (e) => {
+      e.stopPropagation();
+      nav.classList.remove('open'); side.classList.remove('open');
+      buildMenu();
+      menuWrap.hidden = false;
+    });
+    menuWrap.addEventListener('click', (e) => {
+      if (e.target === menuWrap) { closeMenu(); return; }
+      const b = e.target.closest('button');
+      if (!b) return;
+      if (b.dataset.act === 'close') { closeMenu(); return; }
+      if (b.dataset.act === 'keyboard') { window.pocketToggleSoftKeyboard(); buildMenu(); return; }
+      if (b.dataset.msg) {
+        const msg = JSON.parse(b.dataset.msg);
+        send(msg);
+        if (msg.type === 'stats' || msg.type === 'help') { closeMenu(); return; }
+        setTimeout(buildMenu, 60); // reflect the new state
+      }
+    });
+    document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !menuWrap.hidden) closeMenu(); }, true);
+
     document.getElementById('paper-scroll').addEventListener('touchstart', (e) => {
       if (e.touches[0].clientX < EDGE || e.touches[0].clientX > window.innerWidth - EDGE) return;
       nav.classList.remove('open');

@@ -40,6 +40,7 @@ function applyFonts() {
       DROPCAP_FONTS[f.dropcap],
     );
   }
+  document.body.classList.toggle('no-dropcap', f.dropcap === 'none');
   document.body.classList.toggle("night", library.pageTheme === "night");
   document.body.classList.toggle("bright", !!library.uiBright);
   const size = Math.min(22, Math.max(14, library.editorFontSize || 17));

@@ -239,7 +239,7 @@ function chapterStartBackspace(e, body, chId) {
   const prevCount = prevBody.querySelectorAll("p").length;
   const keepScroll = $("#paper-scroll").scrollTop;
   chapterHTML[prevId] = captureBody(prevBody) + captureBody(body);
-  window.neo.writeChapter(book.id, prevId, chapterHTML[prevId]);
+  persistChapter(prevId);
   for (const s of stickies) if (s.chapterId === chId) s.chapterId = prevId;
   window.neo.writeJSON(book.id, "stickies", stickies);
   for (const d of darlings) if (d.chapterId === chId) d.chapterId = prevId;
@@ -499,7 +499,7 @@ function splitChapterAt(body, chId, block, sel) {
   const idx = book.chapterOrder.indexOf(chId);
   const newId = createChapterAt(idx + 1);
   chapterHTML[newId] = parts.join("") || "<p><br></p>";
-  window.neo.writeChapter(book.id, newId, chapterHTML[newId]);
+  persistChapter(newId);
   const keepScroll = $("#paper-scroll").scrollTop;
   renderChapters();
   focusChapterStart(newId);

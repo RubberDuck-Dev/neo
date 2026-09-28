@@ -1,8 +1,8 @@
 # Upstream alignment
 
 Ported all changes since the common ancestor `5b610129` through hughhowey/neo
-main `ffbfefc7164a3d9edfcccecc208ff3d5903522c0` (2026-09-27).
-The desktop version now matches upstream 0.8.3.
+main `ac12d840175ca1f9a892386c60dc7561f5e0030a` (2026-09-27).
+The desktop version now matches upstream 0.8.4.
 
 Upstream's app.js changes live in the corresponding renderer modules here:
 
@@ -27,3 +27,9 @@ Linux keeps the previously implemented NEO-Library default and legacy path suppo
 
 Native iOS builds/signing require macOS and Xcode. Windows tests cover the shared
 renderer and mocked Capacitor file/iCloud bridge, not device signing or iCloud sync.
+
+Additional upstream 0.8.4 work:
+- Changed-only saves and shared-library refresh/conflict copies in renderer/11-saving.js and renderer/11-refresh.js.
+- Styled DOCX import, remembered window bounds, and Drop Cap Off in main.js and renderer/23-help-fonts.js.
+- Pocket Format/View sheet, keyboard and iCloud refresh fixes in pocket/www and pocket/ios.
+- The new-book starting preference remains in Preferences, where NEO already offered it; no duplicate File menu control was added.

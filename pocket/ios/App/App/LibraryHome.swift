@@ -64,8 +64,16 @@ public class LibraryHomePlugin: CAPPlugin, CAPBridgedPlugin {
         while pending {
             pending = false
             let keys: [URLResourceKey] = [.isUbiquitousItemKey, .ubiquitousItemDownloadingStatusKey, .ubiquitousItemIsDownloadingKey]
-            if let en = fm.enumerator(at: target, includingPropertiesForKeys: keys, options: [.skipsHiddenFiles]) {
+            // Walk everything, hidden files included: a not-yet-downloaded file
+            // is a hidden ".name.icloud" placeholder, and they hide inside
+            // every book folder, not just at the top.
+            if let en = fm.enumerator(at: target, includingPropertiesForKeys: keys, options: []) {
                 for case let item as URL in en {
+                    if item.lastPathComponent.hasSuffix(".icloud") {
+                        pending = true
+                        try? fm.startDownloadingUbiquitousItem(at: item)
+                        continue
+                    }
                     let v = try? item.resourceValues(forKeys: Set(keys))
                     guard v?.isUbiquitousItem == true else { continue }
                     if let status = v?.ubiquitousItemDownloadingStatus, status != .current {
@@ -75,12 +83,13 @@ public class LibraryHomePlugin: CAPPlugin, CAPBridgedPlugin {
                         }
                     }
                 }
-            }
-            // placeholders (".name.icloud") are hidden files; kick those too
-            if let names = try? fm.contentsOfDirectory(atPath: target.path) {
-                for n in names where n.hasSuffix(".icloud") {
+            } else if target.lastPathComponent.hasSuffix(".icloud") || !fm.fileExists(atPath: target.path) {
+                // a single file that is still a placeholder
+                let dir = target.deletingLastPathComponent()
+                let ph = dir.appendingPathComponent("." + target.lastPathComponent + ".icloud")
+                if fm.fileExists(atPath: ph.path) {
                     pending = true
-                    try? fm.startDownloadingUbiquitousItem(at: target.appendingPathComponent(n))
+                    try? fm.startDownloadingUbiquitousItem(at: ph)
                 }
             }
             if !pending || Date() > deadline { break }

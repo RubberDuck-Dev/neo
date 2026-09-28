@@ -45,3 +45,35 @@ test('shortcut guide wraps without overlapping and documents the view toggle',as
   assert.deepEqual(r.errors,[]);
  }finally{await r.close();}
 });
+
+test('a new placeholder opens its note and Enter returns to the manuscript mark',async t=>{
+ if(!launchable)return t.skip('Chromium unavailable');
+ const r=await openNeo();
+ try{
+  await r.openBook();
+  await r.page.evaluate(()=>{
+    const text=document.querySelector('.chapter-body p').firstChild;
+    const range=document.createRange();range.setStart(text,Math.min(5,text.length));range.collapse(true);
+    const sel=window.getSelection();sel.removeAllRanges();sel.addRange(range);insertPlaceholder();
+  });
+  assert.equal(await r.page.locator('#side-pane').evaluate(e=>e.classList.contains('open')),true);
+  const note=r.page.locator('.sticky:not(.resolved) textarea').last();
+  assert.equal(await note.evaluate(e=>document.activeElement===e),true);
+  await note.fill('Check this name'); await note.press('Enter');
+  assert.equal(await r.page.locator('#side-pane').evaluate(e=>e.classList.contains('open')),false);
+  assert.equal(await r.page.evaluate(()=>window.getSelection().anchorNode?.previousSibling?.classList?.contains('ph-mark')),true);
+  assert.deepEqual(r.errors,[]);
+ }finally{await r.close();}
+});
+
+test('Drop Cap Off removes initials from editor and HTML export',async t=>{
+ if(!launchable)return t.skip('Chromium unavailable');
+ const r=await openNeo();
+ try{
+  await r.openBook(); await r.menu({type:'dropCap',value:'none'});
+  assert.equal(await r.page.locator('body').evaluate(e=>e.classList.contains('no-dropcap')),true);
+  const html=await r.page.evaluate(()=>buildHtml(bookExportData()));
+  assert.doesNotMatch(html,/\.chapter h2 \+ p:not\(\.poetry\)::first-letter/);
+  assert.deepEqual(r.errors,[]);
+ }finally{await r.close();}
+});

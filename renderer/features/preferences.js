@@ -21,7 +21,7 @@ function openPreferences() {
   let saving = false;
   const { bd, close } = settingsDialog({
     title: 'Preferences', scope: 'Entire library · all authors', canClose: () => !saving,
-    content: `<label>My writing day ends at<select id="st-dayends">${[0,1,2,3,4,5,6].map(h => `<option value="${h}"${(library.dayEndsAt || 0) === h ? ' selected' : ''}>${h ? h + ' am' : 'midnight'}</option>`).join('')}</select></label><p class="sync-detail">Writing after midnight can count toward the previous day.</p>
+    content: `<label>My writing day ends at<select id="st-dayends">${Array.from({length:24},(_,h) => `<option value="${h}"${(library.dayEndsAt || 0) === h ? ' selected' : ''}>${h === 0 ? 'midnight' : h === 12 ? 'noon' : h < 12 ? h + ' am' : h - 12 + ' pm'}</option>`).join('')}</select></label><p class="sync-detail">Writing after midnight can count toward the previous day.</p>
     <section class="stats-section"><h3>New-book starting point</h3><label>Start each new book in<select id="pref-writing-style"><option value="pantser"${library.writingStyle !== 'plotter' ? ' selected' : ''}>The blank page (Pantser)</option><option value="plotter"${library.writingStyle === 'plotter' ? ' selected' : ''}>The outline (Plotter)</option></select></label></section><p class="dialog-error" role="status"></p>`,
     actions: '<button class="m-cancel btn-quiet">Cancel</button><button class="m-ok btn-gold">Save</button>'
   });

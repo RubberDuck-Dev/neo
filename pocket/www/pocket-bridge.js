@@ -25,7 +25,7 @@
       const r = await libraryHome().locate();
       HOME = String(r.path).replace(/\/+$/, '');
       CLOUD = !!r.cloud;
-      if (CLOUD) await libraryHome().fetch({ wait: 8000 });
+      if (CLOUD) await libraryHome().fetch({ wait: 20000 });
     } catch (err) {
       showErrorDetail('Could not find the library folder: ' + (err && err.message || err) +
         '\nplugins the page can see: ' + Object.keys((window.Capacitor && window.Capacitor.Plugins) || {}).join(', '));
@@ -148,6 +148,7 @@
     /* ---------- library ---------- */
     readLibrary: async () => {
       if (!(await checkAccess())) return { authorName: '', penNames: [], firstRunDone: false, shelves: [{ id: 'shelf-1', name: 'Works in Progress', bookIds: [] }] };
+      await fetchCloud('library.json', 15000);
       return readJSONFile(p('library.json'), {
         authorName: '', penNames: [], firstRunDone: false, pageTheme: 'night',
         shelves: [{ id: 'shelf-1', name: 'Works in Progress', bookIds: [] }]
@@ -180,8 +181,9 @@
     writeBookMeta: async (bookId, meta) => {
       meta.modified = new Date().toISOString();
       await writeJSONFile(p(bookId, 'book.json'), meta);
-      return true;
+      return meta.modified;
     },
+    refreshBook: async (bookId) => { await fetchCloud(bookId, 4000); return true; },
     createBook: async (opts) => {
       const seed = (opts && opts.title) ? slugify(opts.title) : '';
       const id = 'book-' + (seed ? seed + '-' : '') + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 7);
@@ -328,25 +330,36 @@
     listCheckpoints: async () => [],
     gitStatus: async () => ({ available: false, initialized: false }),
 
-    onMenu: (cb) => { window.pocketMenu = cb; /* no menu bar: pocket keys call this (index.html) */ },
-    typewriterState: () => {},
-    poetryState: () => { /* no Format menu to tick */ }
+    onMenu: (cb) => { window.pocketMenu = cb; },
+    typewriterState: (on) => { window.pocketState.typewriter = !!on; },
+    poetryState: (on) => { window.pocketState.poetry = !!on; }
   };
+  window.pocketState = { poetry: false, typewriter: false };
 
   // Pocket is written on a real keyboard, so Android's on-screen one stays
   // down: every editable field gets inputmode="none", which keeps the caret
   // and hardware typing but never summons the soft keyboard. Long-press the
   // ☰ button to bring it back for an emergency (and again to send it away).
   const EDITABLE = '[contenteditable], input, textarea';
-  let softKeyboard = false;
-  try { softKeyboard = localStorage.getItem('pocket-soft-keyboard') === 'on'; } catch { /* fine */ }
+  let softKeyboard = isIOS();
+  try {
+    const saved = localStorage.getItem('pocket-soft-keyboard');
+    if (saved) softKeyboard = saved === 'on';
+  } catch { /* fine */ }
   function applyKeyboardMode(root) {
     const els = root.matches && root.matches(EDITABLE) ? [root] : [];
     (root.querySelectorAll ? [...els, ...root.querySelectorAll(EDITABLE)] : els).forEach((el) => {
       if (softKeyboard) el.removeAttribute('inputmode');
       else el.setAttribute('inputmode', 'none');
+      if (isIOS()) {
+        el.setAttribute('autocorrect', 'off');
+        el.setAttribute('autocapitalize', 'off');
+        el.setAttribute('autocomplete', 'off');
+        el.setAttribute('spellcheck', 'false');
+      }
     });
   }
+  window.pocketSoftKeyboardOn = () => softKeyboard;
   window.pocketToggleSoftKeyboard = () => {
     softKeyboard = !softKeyboard;
     try { localStorage.setItem('pocket-soft-keyboard', softKeyboard ? 'on' : 'off'); } catch { /* fine */ }
