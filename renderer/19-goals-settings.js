@@ -63,7 +63,7 @@ function statsChartSvg(subject = book, dailyTarget = effectiveDailyTarget()) {
     : mode === "cumulative" && goal ? `<line x1="${PAD}" x2="${W - PAD}" y1="${(H - PAD - (goal / maxC) * (H - PAD * 2 - 20)).toFixed(1)}" y2="${(H - PAD - (goal / maxC) * (H - PAD * 2 - 20)).toFixed(1)}" stroke="var(--accent)" stroke-dasharray="5,4" stroke-width="1.5"/>` : "";
   const axisLabels = mode === "daily" ? `<text x="8" y="18" fill="var(--ui-text-soft)" font-size="10">${maxD.toLocaleString()}</text><text x="8" y="${H - 10}" fill="var(--muted)" font-size="10">0</text>` : `<text x="8" y="18" fill="var(--ui-text-soft)" font-size="10">${maxC.toLocaleString()}</text><text x="8" y="${H - 10}" fill="var(--muted)" font-size="10">0</text>`;
   return `<svg id="stats-chart" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg">${axisLabels}${bars}<path d="${line}" fill="none" stroke="var(--accent)" stroke-width="2"/>${paceLine}${goalLine}<g class="chart-tooltip" hidden><rect rx="3" fill="var(--surface-raised)" stroke="var(--accent)" stroke-width="0.7"></rect><text fill="var(--ui-text)" font-size="11" text-anchor="middle"></text></g></svg>
-  <div style="display:flex;justify-content:space-between;font-size:10px;color:var(--muted);padding:2px 4px"><span>30 days ago</span><span style="color:var(--accent)">▮ daily words</span><span style="color:var(--accent)">${mode === "daily" ? "- - daily target" : "— total · - - goal"}${planned ? " · pace" : ""}</span><span>today</span></div>`;
+  <div style="display:flex;justify-content:space-between;font-size:10px;color:var(--muted);padding:2px 4px"><span>30 days ago</span><span style="color:var(--accent)">${mode === "daily" ? "▮ daily words" : "— total words"}</span><span style="color:var(--accent)">${mode === "daily" ? "- - daily target" : "- - manuscript goal"}${planned ? " · pace" : ""}</span><span>today</span></div>`;
 }
 
 function bindStatsChart(root) {
@@ -109,7 +109,9 @@ function deadlinePaceText(subject = book) {
 function openStats() {
   const hasBook = !!book;
   const target = book;
-  const draft = hasBook ? { ...book } : null;
+  // Chart mode is a view choice: start on daily words each time, regardless
+  // of an older book's saved chart preference.
+  const draft = hasBook ? { ...book, goalChartMode: 'daily' } : null;
   let daily = library.dailyGoal || 0, saving = false;
   const { bd, close } = settingsDialog({
     title: 'Progress & goals', scope: hasBook ? `This book · ${book.title}` : 'Entire library', className: 'stats-modal', canClose: () => !saving,
@@ -142,7 +144,7 @@ function openStats() {
       await window.neo.writeLibrary({ ...library, dailyGoal: daily });
       library.dailyGoal = daily;
       if (hasBook) {
-        Object.assign(target, { wordGoal: draft.wordGoal, goalDueDate: draft.goalDueDate, goalChartMode: draft.goalChartMode || 'daily' });
+        Object.assign(target, { wordGoal: draft.wordGoal, goalDueDate: draft.goalDueDate });
         scheduleMetaSave(); updateCounters();
       }
       saving = false; close();

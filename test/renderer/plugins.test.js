@@ -12,6 +12,7 @@ test("sprints clean up on book close and re-enable without duplicate controls", 
   try {
     await r.openBook();
     await r.menu({ type: "stats" });
+    assert.equal(await r.page.locator('.stats-sprint-time[aria-pressed="true"]').getAttribute('data-minutes'), '20');
     await r.page.click("#st-timer-sprint");
     assert.equal(await r.page.locator("#sprint-controls").count(), 1);
     await r.page.click("#back-to-shelf");
@@ -23,6 +24,55 @@ test("sprints clean up on book close and re-enable without duplicate controls", 
     assert.equal(await r.page.locator("#sprint-controls").count(), 0);
     await r.page.evaluate(() => NeoPlugins.setEnabled("sprints", true));
     assert.equal(await r.page.locator("#sprint-controls").count(), 1);
+    assert.deepEqual(r.errors, []);
+  } finally { await r.close(); }
+});
+
+test("sprint timer offers quick durations and validates custom minutes", async (t) => {
+  if (skip(t)) return;
+  const r = await openNeo({ lib: { authors: [{ id: "a1", name: "A. Writer", plugins: ["sprints"] }] } });
+  try {
+    await r.openBook();
+    await r.menu({ type: "stats" });
+    assert.deepEqual(await r.page.locator('.stats-sprint-time').evaluateAll(buttons => buttons.map(b => b.dataset.minutes)), ['10', '20', '30', 'custom']);
+    await r.page.click('.stats-sprint-time[data-minutes="10"]');
+    await r.page.click('#st-timer-sprint');
+    assert.match(await r.page.locator('#goal-counter').textContent(), /^10:00$/);
+    await r.menu({ type: "stats" });
+    assert.match(await r.page.locator('#st-sprint-remaining').textContent(), /^(10:00|9:59)$/);
+    assert.equal(await r.page.locator('#st-sprint-pause').textContent(), 'Pause');
+    assert.equal(await r.page.locator('#st-sprint-state').textContent(), 'remaining');
+    assert.equal(await r.page.locator('#st-sprint-pause').evaluate(el => {
+      const sample = document.createElement('span');
+      sample.style.backgroundColor = 'var(--accent)';
+      document.body.appendChild(sample);
+      const matches = getComputedStyle(el).backgroundColor === getComputedStyle(sample).backgroundColor;
+      sample.remove();
+      return matches;
+    }), true);
+    await r.page.click('#st-sprint-pause');
+    assert.equal(await r.page.locator('#st-sprint-pause').textContent(), 'Resume');
+    assert.equal(await r.page.locator('#st-sprint-state').textContent(), 'paused');
+    await r.page.click('#st-sprint-pause');
+    assert.equal(await r.page.locator('#st-sprint-pause').textContent(), 'Pause');
+    await r.page.click('#st-sprint-end');
+    await r.page.click('.stats-sprint-time[data-minutes="custom"]');
+    assert.equal(await r.page.locator('.stats-sprint-custom').isVisible(), true);
+    assert.equal(await r.page.locator('.stats-sprint-custom').evaluate(el => el.parentElement.classList.contains('stats-sprint-time-options')), true);
+    const customBox = await r.page.locator('#st-sprint-minutes').boundingBox();
+    const choiceBox = await r.page.locator('.stats-sprint-time[data-minutes="custom"]').boundingBox();
+    const startBox = await r.page.locator('#st-timer-sprint').boundingBox();
+    assert.ok(Math.abs((customBox.y + customBox.height / 2) - (choiceBox.y + choiceBox.height / 2)) < 8, 'custom minutes stays on the duration row');
+    assert.ok(Math.abs((startBox.y + startBox.height / 2) - (choiceBox.y + choiceBox.height / 2)) < 8, 'Start timer is vertically centered');
+    await r.page.setViewportSize({ width: 420, height: 740 });
+    const narrowCustom = await r.page.locator('#st-sprint-minutes').boundingBox();
+    const narrowChoice = await r.page.locator('.stats-sprint-time[data-minutes="custom"]').boundingBox();
+    assert.ok(Math.abs((narrowCustom.y + narrowCustom.height / 2) - (narrowChoice.y + narrowChoice.height / 2)) < 8, 'custom minutes stays inline in a narrow window');
+    await r.page.click('#st-timer-sprint');
+    assert.match(await r.page.locator('.stats-sprint-error').textContent(), /whole number/);
+    await r.page.fill('#st-sprint-minutes', '13');
+    await r.page.click('#st-timer-sprint');
+    assert.match(await r.page.locator('#goal-counter').textContent(), /^13:00$/);
     assert.deepEqual(r.errors, []);
   } finally { await r.close(); }
 });

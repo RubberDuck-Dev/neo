@@ -44,6 +44,9 @@ html, body {
 
 button { font: inherit; cursor: pointer; }
 [hidden] { display: none !important; }
+input[type="number"] { appearance: textfield; -moz-appearance: textfield; }
+input[type="number"]::-webkit-inner-spin-button,
+input[type="number"]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
 .soft { color: var(--muted); font-size: 12px; }
 
 /* ========================= BOOKSHELF ========================= */

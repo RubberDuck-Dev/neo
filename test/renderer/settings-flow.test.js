@@ -48,12 +48,18 @@ test('goals preview and publishing language respect Cancel, and Save applies onl
   const r=await openNeo();
   try {
     await r.openBook(); await r.menu({type:'stats'});
+    assert.equal(await r.page.locator('[data-chart-mode="daily"]').getAttribute('class'),'active');
     assert.equal(await r.page.locator('#ra-voice, #pub-language, #st-dayends').count(),0);
     await r.page.fill('#st-book','90000'); await r.page.fill('#st-daily','600');
     await r.page.click('[data-chart-mode="cumulative"]');
     assert.equal(await r.page.evaluate(()=>book.wordGoal),0);
     await r.page.click('.m-cancel');
     assert.equal(await r.page.evaluate(()=>book.wordGoal),0);
+    await r.page.evaluate(()=>{ book.goalChartMode='cumulative'; });
+    await r.menu({type:'stats'});
+    assert.equal(await r.page.locator('[data-chart-mode="daily"]').getAttribute('class'),'active');
+    assert.equal(await r.page.locator('#stats-chart .stats-bar').count(),30);
+    await r.page.click('.m-cancel');
     await r.menu({type:'stats'}); await r.page.fill('#st-book','70000'); await r.page.click('.m-ok');
     assert.equal(await r.page.evaluate(()=>book.wordGoal),70000);
     await r.menu({type:'publishingDetails'}); await r.page.selectOption('#pub-language','fr'); await r.page.keyboard.press('Escape');
