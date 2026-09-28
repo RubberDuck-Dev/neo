@@ -48,7 +48,7 @@ and an Apple Developer account for a real device. Then:
     cd pocket && npm install
     cp -R ../renderer ../plugins ../shared ../locales www/
     cp ../covers.js ../styles.css www/
-    mkdir -p www/fonts && cp ../fonts/*.woff2 www/fonts/
+    mkdir -p www/fonts && cp ../fonts/*.woff2 ../fonts/*.ttf ../fonts/*.otf www/fonts/
     npx cap sync ios
     npx cap open ios
 

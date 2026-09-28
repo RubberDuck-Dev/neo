@@ -23,7 +23,14 @@ test.before(async () => {
   for (const dir of ['plugins', 'shared', 'locales']) fs.cpSync(path.join(ROOT, dir), path.join(www, dir), { recursive: true });
   for (const f of ['covers.js', 'styles.css', 'i18n.js']) fs.copyFileSync(path.join(ROOT, f), path.join(www, f));
   fs.mkdirSync(path.join(www, 'fonts'));
-  for (const f of fs.readdirSync(path.join(ROOT, 'fonts')).filter((n) => n.endsWith('.woff2'))) fs.copyFileSync(path.join(ROOT, 'fonts', f), path.join(www, 'fonts', f));
+  for (const f of fs.readdirSync(path.join(ROOT, 'fonts')).filter((n) => /\.(woff2|ttf|otf)$/.test(n))) fs.copyFileSync(path.join(ROOT, 'fonts', f), path.join(www, 'fonts', f));
+});
+
+test('Pocket package includes every font used by the shared stylesheet', () => {
+  const css = fs.readFileSync(path.join(www, 'styles.css'), 'utf8');
+  for (const [, font] of css.matchAll(/url\(['"]?(fonts\/[^)'"\s]+)['"]?\)/g)) {
+    assert.ok(fs.existsSync(path.join(www, font)), `${font} is missing from Pocket`);
+  }
 });
 
 const library = {
