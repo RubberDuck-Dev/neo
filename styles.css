@@ -618,8 +618,8 @@ body.bright .spell-menu button { color: var(--ui-text); }
 }
 .ol-text:focus { border-bottom-color: color-mix(in srgb, var(--accent) 45%, var(--paper)); }
 .ol-text:empty::before { color: var(--paper-faint); font-style: italic; }
-.ol-chapter .ol-text:empty::before { content: 'What happens in this chapter…'; }
-.ol-section .ol-text:empty::before { content: 'What happens in this section…'; }
+.ol-chapter .ol-text:empty::before { content: 'Title (optional)'; }
+.ol-section .ol-text:empty::before { content: 'Subsection…'; }
 .ol-col { flex: 1; display: flex; flex-direction: column; min-width: 0; }
 .ol-title {
   outline: none; font-family: Georgia, serif; font-weight: 700; line-height: 1.4;
@@ -887,10 +887,16 @@ body.bright .spell-menu button { color: var(--ui-text); }
   margin: 16px 0 8px;
 }
 .help-grid {
-  display: grid; grid-template-columns: 110px 1fr; gap: 6px 16px;
+  display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 3fr); gap: 10px 24px;
   font-size: 13.5px; line-height: 1.45; color: var(--ui-text-soft);
 }
-.help-grid .hk { color: var(--ui-text); font-weight: 600; white-space: nowrap; }
+.help-grid > span { min-width: 0; overflow-wrap: anywhere; }
+.help-grid .hk { color: var(--ui-text); font-weight: 600; }
+.modal.settings-dialog.help-dialog { width: min(820px, calc(100vw - 32px)); }
+@media (max-width: 520px) {
+  .help-grid { grid-template-columns: minmax(0, 1fr); gap: 4px; }
+  .help-grid > span:not(.hk) { margin-bottom: 12px; }
+}
 
 /* --- Custom cover art: the image IS the cover --- */
 .book.has-cover .b-text { display: none; }
@@ -998,6 +1004,8 @@ body.focus-mode .chapter-body.focus-cap:not(.cap-off) p:not(.poetry):not(p:not(.
 .settings-dialog h2 { font-size: 21px; line-height: 1.25; margin: 0 0 8px; color: var(--accent); }
 .settings-dialog .dialog-scope { font-size: 12px; color: var(--ui-text-soft); margin: 0; }
 .settings-dialog .dialog-body { min-height: 0; overflow-y: auto; padding: 20px 26px; }
+.modal.settings-dialog.saving-tabs-modal { height: min(680px, calc(100vh - 32px)); }
+.saving-tabs-modal .dialog-body { flex: 1; scrollbar-gutter: stable; }
 .settings-dialog .dialog-footer { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 10px; padding: 16px 26px; margin: 0; border-top: 1px solid var(--line); flex-shrink: 0; }
 .settings-dialog .dialog-back { padding: 0 0 12px; }
 .settings-dialog .dialog-close, .settings-dialog .dialog-head > .m-cancel { font-size: 22px; padding: 0 6px; line-height: 1; }

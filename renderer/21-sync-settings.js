@@ -25,19 +25,19 @@ function timeAgo(iso) {
   return new Date(then).toLocaleString();
 }
 
-function openSyncSettings(draft = null) {
+function openSyncSettings(draft = null, host = null) {
   const settings = draft || historySettings();
   const saveTime = lastSavedAt || (book?.modified ? new Date(book.modified) : null);
   const saveLabel = saveTime && !Number.isNaN(saveTime.getTime()) ? saveTime.toLocaleString() : "not yet recorded";
   let saving = false;
-  const { bd, close } = settingsDialog({
-    title: "Saving & recovery", scope: "Entire library · all authors", className: "sync-settings-modal",
+  const { bd, close, switchTo } = settingsDialog({
+    title: "Saving & recovery", scope: "Entire library · all authors", className: "sync-settings-modal saving-tabs-modal", host,
     canClose: () => !saving,
     tabs: NeoPlugins.enabled('github') ? [
       { label: 'Local saving', active: true },
       { label: 'GitHub backup', select: () => {
         const draft = { enabled: bd.querySelector('#sy-history-enabled').checked, intervalMinutes: Number(bd.querySelector('#sy-history-interval').value), retentionDays: Number(bd.querySelector('#sy-history-retention').value) };
-        if (close()) NeoPlugins.call('github', 'configure', { onLocal: () => openSyncSettings(draft) });
+        switchTo(host => NeoPlugins.call('github', 'configure', { host, onLocal: host => openSyncSettings(draft, host) }));
       } }
     ] : [],
     content: `

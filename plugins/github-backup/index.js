@@ -5,14 +5,14 @@ NeoPlugins.define("github", { name: "GitHub backup", icon: "⌘", kind: "Backup"
   const { escHtml, toast, ipcErrorText, timeAgo } = ctx;
   const api = ctx.git;
   let active = null;
-  function configure({ onLocal } = {}) {
+  function configure({ onLocal, host } = {}) {
     if (active) return;
     let git = ctx.librarySettings.history?.git || {};
     let busy = true, connected = false, editingConnection = false, available = false, lastPushAt = null;
     let timer;
-    const { bd, close } = ctx.settingsDialog({
-      title: onLocal ? "Saving & recovery" : "GitHub backup", scope: "Entire library · all authors", className: "github-settings-modal",
-      tabs: onLocal ? [{ label: 'Local saving', select: () => { if (close()) onLocal(); } }, { label: 'GitHub backup', active: true }] : [],
+    const { bd, close, switchTo } = ctx.settingsDialog({
+      title: onLocal ? "Saving & recovery" : "GitHub backup", scope: "Entire library · all authors", className: `github-settings-modal${onLocal ? ' saving-tabs-modal' : ''}`, host,
+      tabs: onLocal ? [{ label: 'Local saving', select: () => switchTo(onLocal) }, { label: 'GitHub backup', active: true }] : [],
       back: onLocal ? null : ctx.openLibrary, canClose: () => !busy,
       onClose: () => { clearInterval(timer); active = null; },
       content: `
@@ -36,7 +36,8 @@ NeoPlugins.define("github", { name: "GitHub backup", icon: "⌘", kind: "Backup"
         <section class="stats-section"><h3>Recovery</h3><button id="sy-git-restore" class="btn-quiet">Set up this computer from a backup…</button></section>`,
       actions: '<button class="m-ok btn-quiet">Done</button>'
     });
-    ctx.own(bd);
+    // The backdrop can be handed back to Local saving; own only this panel.
+    ctx.own(bd.firstElementChild);
     active = { close: () => { busy = false; close(); } };
     const $ = selector => bd.querySelector(selector);
     const status = (message, error = false) => { $('#sy-git-status').textContent = message; $('#sy-git-status').classList.toggle('dialog-error', error); };

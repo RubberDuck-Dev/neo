@@ -279,6 +279,7 @@ function switchTab(name) {
         : { scroll: scroller.scrollTop };
   }
   currentTab = name;
+  $('#outline-tools').hidden = name !== 'outline';
   $$(".tab").forEach((t) =>
     t.classList.toggle("active", t.dataset.tab === name),
   );

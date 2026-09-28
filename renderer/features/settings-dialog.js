@@ -1,9 +1,10 @@
 "use strict";
 
 // A small shell shared by settings screens; each screen owns its form and saving.
-function settingsDialog({ title, scope, content, actions = '', className = '', onClose, canClose = () => true, back, tabs = [] }) {
-  const previous = document.activeElement;
-  const bd = document.createElement('div');
+function settingsDialog({ title, scope, content, actions = '', className = '', onClose, canClose = () => true, back, tabs = [], host }) {
+  const previous = host?._previousFocus || document.activeElement;
+  const bd = host || document.createElement('div');
+  bd._previousFocus = previous;
   bd.className = 'modal-backdrop';
   bd.innerHTML = `<div class="modal settings-dialog ${className}" role="dialog" tabindex="-1" aria-modal="true" aria-label="${escHtml(title)}">
     <header class="dialog-head"><div>${back ? '<button class="dialog-back btn-quiet">← Plugin Library</button>' : ''}<h2>${escHtml(title)}</h2><p class="dialog-scope">${escHtml(scope)}</p></div><button class="dialog-close btn-quiet" aria-label="Close">×</button></header>
@@ -30,7 +31,7 @@ function settingsDialog({ title, scope, content, actions = '', className = '', o
     };
   });
   bd.querySelector('.dialog-back')?.addEventListener('click', () => { if (close()) back(); });
-  bd.addEventListener('keydown', (event) => {
+  bd.onkeydown = (event) => {
     if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); close(); }
     if (event.key !== 'Tab') return;
     const items = [...bd.querySelectorAll('button, input, select, textarea, a[href], [tabindex="0"]')].filter((el) => !el.disabled && el.getClientRects().length);
@@ -39,10 +40,15 @@ function settingsDialog({ title, scope, content, actions = '', className = '', o
     if (document.activeElement === bd.firstElementChild) { event.preventDefault(); (event.shiftKey ? last : first).focus(); return; }
     if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last?.focus(); }
     else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus(); }
-  });
-  document.body.appendChild(bd);
+  };
+  if (!bd.isConnected) document.body.appendChild(bd);
   (bd.querySelector('[role="tab"][aria-selected="true"]') || bd.querySelector('.dialog-close')).focus();
-  return { bd, close };
+  const switchTo = show => {
+    if (!canClose()) return;
+    onClose?.();
+    show(bd);
+  };
+  return { bd, close, switchTo };
 }
 
 // Dismiss only a click that starts and ends on the backdrop. Reuse each

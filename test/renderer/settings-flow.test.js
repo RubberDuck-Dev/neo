@@ -113,11 +113,16 @@ test('enabled GitHub appears as a saving tab without losing local drafts', async
   try {
     await r.menu({type:'syncSettings'});
     await r.page.selectOption('#sy-history-interval','30');
+    const bounds = await r.page.locator('.settings-dialog').boundingBox();
+    await r.page.evaluate(() => { window.__savingBackdrop = document.querySelector('.modal-backdrop'); });
     await r.page.getByRole('tab',{name:'GitHub backup'}).click();
+    assert.deepEqual(await r.page.locator('.settings-dialog').boundingBox(),bounds);
+    assert.ok(await r.page.evaluate(() => window.__savingBackdrop === document.querySelector('.modal-backdrop')));
     assert.equal(await r.page.locator('.settings-dialog').count(),1);
     assert.equal(await r.page.getByRole('tab',{name:'GitHub backup'}).getAttribute('aria-selected'),'true');
     assert.equal(await r.page.locator('#sy-git-remote').count(),1);
     await r.page.getByRole('tab',{name:'Local saving'}).click();
+    assert.deepEqual(await r.page.locator('.settings-dialog').boundingBox(),bounds);
     assert.equal(await r.page.locator('#sy-history-interval').inputValue(),'30');
     await r.page.click('.m-ok');
     assert.equal((await r.lastCall('writeLibrary'))[1].history.intervalMinutes,30);
@@ -189,7 +194,7 @@ test('upstream editor fixes preserve outline text, Notes punctuation, and export
     await line.fill('Keep this chapter'); await r.page.keyboard.press('Home'); await r.page.keyboard.press('Enter');
     const order=await r.page.evaluate(()=>book.chapterOrder);
     assert.notEqual(order[0],'c1'); assert.equal(order[1],'c1');
-    assert.equal(await r.page.evaluate(()=>book.chapterNotes.c1),'Keep this chapter');
+    assert.equal(await r.page.evaluate(()=>book.chapterTitles.c1),'Keep this chapter');
     const output=await r.page.evaluate(()=>{
       const d={title:'<b>Title</b> *test*',author:'A & B',subtitle:'[subtitle]',sections:[{heading:'<Chapter>',paras:[]}]};
       return {html:buildHtml(d),md:buildMd(d)};

@@ -56,7 +56,7 @@ function renderStickies() {
   const showAll = wrap.dataset.showAll === "1";
   const visible = showAll ? stickies : stickies.filter((s) => !s.resolved);
   if (visible.length === 0) {
-    wrap.innerHTML = `<div class="stickies-empty">${stickies.length ? "No pending notes.<br><br>Choose All to revisit resolved notes." : `No notes yet.<br><br>Hit ${KPH} while writing to drop a placeholder — a “come back to this” mark that never breaks your flow.`}</div>`;
+    wrap.innerHTML = `<div class="stickies-empty">${stickies.length ? "Choose All to revisit resolved notes." : `Press ${KPH} while writing to add a note.`}</div>`;
     return;
   }
   const ordered = [...visible].sort(
@@ -70,7 +70,7 @@ function renderStickies() {
     el.innerHTML = `
       <div class="s-ch">${chIdx >= 0 ? "Chapter " + (chIdx + 1) : "Unplaced"}${s.resolved ? '<span class="s-state">resolved</span>' : ""}</div>
       <textarea placeholder="What needs doing here?" spellcheck="false"></textarea>
-      <div class="s-actions">${s.resolved ? "" : '<button class="s-go">Go to</button> <button class="s-done">Resolve</button> '}<button class="s-delete">Delete</button></div>`;
+      <div class="s-actions"><button class="s-go">Go to</button> ${s.resolved ? '<button class="s-reopen">Reopen</button>' : '<button class="s-done">Resolve</button>'} <button class="s-delete">Delete</button></div>`;
     const ta = el.querySelector("textarea");
     ta.value = s.text;
     ta.addEventListener("input", () => {
@@ -86,10 +86,14 @@ function renderStickies() {
       go.onclick = () => {
         switchTab("manuscript");
         const mark = document.querySelector(`.ph-mark[data-sid="${s.id}"]`);
-        if (mark) mark.scrollIntoView({ behavior: "smooth", block: "center" });
+        const target = mark || stickyLocation(s)?.startContainer;
+        const el = target?.nodeType === Node.TEXT_NODE ? target.parentElement : target;
+        if (el) el.scrollIntoView({ behavior: "smooth", block: "center" });
+        else toast('This note’s chapter is no longer available');
       };
     const done = el.querySelector(".s-done");
     if (done) done.onclick = () => setStickyResolved(s.id);
+    el.querySelector('.s-reopen')?.addEventListener('click', () => reopenSticky(s.id));
     el.querySelector(".s-delete").onclick = () => deleteSticky(s.id);
     wrap.appendChild(el);
   }
@@ -148,6 +152,10 @@ function setStickyResolved(sid) {
   const mark = document.querySelector(`.ph-mark[data-sid="${sid}"]`);
   if (mark) {
     const chId = mark.closest(".chapter").dataset.id;
+    const bodyEl = mark.closest('.chapter-body');
+    const paragraph = mark.closest('p') || bodyEl;
+    const before = document.createRange(); before.selectNodeContents(paragraph); before.setEndBefore(mark);
+    sticky.anchor = { paragraph: [...bodyEl.children].indexOf(paragraph), offset: before.toString().length };
     const next = mark.nextSibling;
     mark.remove();
     // The marker has its own spacer so it never joins two words. Once the
@@ -163,6 +171,41 @@ function setStickyResolved(sid) {
   window.neo.writeJSON(book.id, "stickies", stickies);
   renderStickies();
   scheduleNavRefresh();
+}
+
+// Keep a best-effort location after resolving removes the visible flag.
+// Older notes without an anchor return to their chapter.
+function stickyLocation(sticky) {
+  const body = document.querySelector(`.chapter[data-id="${sticky.chapterId}"] .chapter-body`);
+  if (!body) return null;
+  const paragraph = body.children[sticky.anchor?.paragraph] || body.firstElementChild || body;
+  const range = document.createRange(); range.selectNodeContents(paragraph); range.collapse(true);
+  let offset = sticky.anchor?.offset || 0;
+  const walker = document.createTreeWalker(paragraph, NodeFilter.SHOW_TEXT);
+  let node;
+  while ((node = walker.nextNode())) {
+    if (offset <= node.length) { range.setStart(node, offset); range.collapse(true); return range; }
+    offset -= node.length;
+  }
+  range.selectNodeContents(paragraph); range.collapse(false); return range;
+}
+
+function reopenSticky(sid) {
+  const sticky = stickies.find(s => s.id === sid);
+  if (!sticky) return;
+  const range = stickyLocation(sticky);
+  if (!range) { toast('This note’s chapter is no longer available'); return; }
+  if (!document.querySelector(`.ph-mark[data-sid="${sid}"]`)) {
+    const mark = document.createElement('span'); mark.className = 'ph-mark'; mark.dataset.sid = sid;
+    mark.contentEditable = 'false'; mark.textContent = '⚑'; range.insertNode(mark);
+    mark.onclick = () => focusSticky(sid);
+    mark.after(document.createTextNode(' '));
+    const body = mark.closest('.chapter-body');
+    chapterHTML[sticky.chapterId] = captureBody(body); scheduleChapterSave(sticky.chapterId);
+  }
+  sticky.resolved = false;
+  window.neo.writeJSON(book.id, 'stickies', stickies);
+  renderStickies(); scheduleNavRefresh();
 }
 
 function deleteSticky(sid) {

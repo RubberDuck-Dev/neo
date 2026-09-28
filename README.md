@@ -35,7 +35,7 @@ When you're editing, not drafting: Edit → Revision Pass (⌘⇧;) marks echoes
 
 **Read aloud**
 
-Hearing your prose catches clunky rhythm and missing words that your eyes skip. Edit → Read Aloud (⌘⌥R) reads from the caret to the end of the chapter, or just the selection, in your computer's own voice, and lights up each sentence as it goes. Any key stops it. Pick the voice and speed in Edit → Read Aloud Settings.
+Hearing your prose catches clunky rhythm and missing words that your eyes skip. Edit → Read Aloud (⌘⌥R) reads from the caret to the end of the chapter, or just the selection, in your computer's own voice, and lights up each sentence as it goes. Any key stops it. Pick the voice and speed in Edit → Voice Settings.
 
 **Focus mode**
 
@@ -60,6 +60,8 @@ Right-click a chapter in the chapter list to mark it Draft, Revised or Done. A s
 **Outlining for plotters** 
 
 Outline chapters and sections in the Outline tab; section notes appear in the manuscript as gray ghost paragraphs, ready to be overwritten. Pantsers can ignore all of it or learn to draw a freakin' map for the first time. Try it. You might like it!
+
+Enable **Outline cards** in Plugins. Switch Outline and Cards above the page with Ctrl/Cmd+Alt+C. Both views share one optional title and its subsections; existing summaries become subsections. Press Enter to add a subsection or Backspace to remove an empty one. Drag the grip to reorder cards, or use Alt+arrow keys with the grip focused. Right-click a card to delete its chapter and keep its prose in Darlings. Import old standalone cards without removing the originals.
 
 **Cover Art** 
 

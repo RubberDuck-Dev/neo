@@ -41,6 +41,7 @@ function renderStoryMap(wrap) {
     cards.className = "story-map-cards";
     chapters.forEach(({ chId, index, entry }) => {
       const words = ctx.chapterWords(chId);
+      const note = book.sectionNotes[chId]?.[0]?.text || "";
       const scenes = (book.sectionNotes[chId] || []).length;
       const title = (book.chapterTitles || {})[chId] || `Chapter ${index + 1}`;
       const card = document.createElement("article");
@@ -54,7 +55,7 @@ function renderStoryMap(wrap) {
           <label>Progress <select data-story-field="progress">${STORY_PROGRESS.map((progress) => `<option${entry.progress === progress ? " selected" : ""}>${progress}</option>`).join("")}</select></label>
           <label>Thread <input data-story-field="thread" value="${escHtml(entry.thread)}" placeholder="Character or question" /></label>
         </div>
-        <div class="story-map-card-foot"><span>${scenes} scene${scenes === 1 ? "" : "s"}</span>${book.chapterNotes[chId] ? `<span title="Outline note">${escHtml(book.chapterNotes[chId].slice(0, 70))}${book.chapterNotes[chId].length > 70 ? "…" : ""}</span>` : "<span>add a chapter note below</span>"}</div>`;
+        <div class="story-map-card-foot"><span>${scenes} scene${scenes === 1 ? "" : "s"}</span>${note ? `<span title="Outline note">${escHtml(note.slice(0, 70))}${note.length > 70 ? "…" : ""}</span>` : "<span>Add a subsection below</span>"}</div>`;
       card.querySelector(".story-map-open").onclick = () => {
         ctx.openChapter(chId);
       };

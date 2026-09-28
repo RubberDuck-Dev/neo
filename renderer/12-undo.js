@@ -108,6 +108,7 @@ function snapshotStructure(label, opts) {
   else scheduleCheckpoint("writing");
   undoStack.push({
     label,
+    legacyCardsImported: book.legacyCardsImported,
     rejoin: !!(opts && opts.rejoin),
     caret: captureCaret(),
     chapterOrder: [...book.chapterOrder],
@@ -124,6 +125,7 @@ function snapshotStructure(label, opts) {
 async function structuralUndo() {
   const snap = undoStack.pop();
   if (!snap || !book) return;
+  book.legacyCardsImported = snap.legacyCardsImported;
   book.chapterOrder = snap.chapterOrder;
   chapterHTML = snap.chapterHTML;
   book.chapterTitles = snap.chapterTitles;

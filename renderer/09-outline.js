@@ -8,11 +8,28 @@
 
 const secLetter = (i) => String.fromCharCode(65 + (i % 26));
 
+// Fold legacy chapter summaries into the two-level outline once, without losing text.
+function migrateOutlineSummaries() {
+  book.sectionNotes ||= {};
+  const changed = [];
+  for (const id of book.chapterOrder) {
+    const summary = book.chapterNotes?.[id];
+    if (summary) {
+      (book.sectionNotes[id] ||= []).unshift({id:'sec-'+crypto.randomUUID(), text:summary});
+      delete book.chapterNotes[id]; changed.push(id);
+    }
+  }
+  if (changed.length) scheduleMetaSave();
+  return changed;
+}
+
 function renderOutline(focusTarget) {
   book.sectionNotes = book.sectionNotes || {};
   book.chapterNotes = book.chapterNotes || {};
+  migrateOutlineSummaries().forEach(syncGhosts);
   const wrap = $("#outline-list");
   wrap.innerHTML = "";
+  if (NeoPlugins.render("outlineView", wrap)) return;
   NeoPlugins.notify("outline", wrap);
 
   book.chapterOrder.forEach((chId, i) => {
@@ -23,7 +40,7 @@ function renderOutline(focusTarget) {
         null,
         i,
         String(i + 1),
-        book.chapterNotes[chId] || "",
+        book.chapterTitles?.[chId] || "",
       ),
     );
     (book.sectionNotes[chId] || []).forEach((sec, j) => {
@@ -36,7 +53,7 @@ function renderOutline(focusTarget) {
   const hint = document.createElement("div");
   hint.className = "ol-hint";
   hint.textContent =
-    "Enter — new chapter (or section, from a section line) · Tab — turn a fresh chapter line into a section · Shift+Tab — turn a section into a chapter · Backspace on an empty line removes it";
+    "Add a line with Enter. Indent with Tab; outdent with Shift+Tab. Remove an empty line with Backspace.";
   wrap.appendChild(hint);
 
   if (focusTarget) {
@@ -66,7 +83,7 @@ function outlineLine(kind, chId, secId, index, label, text) {
   num.className = "ol-num";
   num.textContent = label;
   const txt = document.createElement("div");
-  txt.className = "ol-text";
+  txt.className = kind === "chapter" ? "ol-text ol-title" : "ol-text";
   txt.contentEditable = "true";
   txt.spellcheck = false;
   txt.textContent = text;
@@ -74,7 +91,9 @@ function outlineLine(kind, chId, secId, index, label, text) {
   const save = () => {
     const val = txt.textContent.trim();
     if (kind === "chapter") {
-      book.chapterNotes[chId] = val;
+      book.chapterTitles ||= {}; book.chapterTitles[chId] = val;
+      const heading = document.querySelector(`.chapter[data-id="${chId}"] .ch-title`);
+      if (heading) heading.textContent = val;
     } else {
       const sec = (book.sectionNotes[chId] || []).find((s) => s.id === secId);
       if (sec) sec.text = val;
@@ -145,7 +164,7 @@ function outlineLine(kind, chId, secId, index, label, text) {
       }
       if (countWords(chapterText(chId)) > 0) {
         toast(
-          "This chapter already has words in it — only empty chapter lines can become sections",
+          "Indent only chapters without written prose.",
         );
         return;
       }
@@ -156,7 +175,7 @@ function outlineLine(kind, chId, secId, index, label, text) {
         id: "sec-" + Date.now().toString(36),
         text: txt.textContent.trim(),
       };
-      book.sectionNotes[prevCh].push(newSec);
+      book.sectionNotes[prevCh].push(newSec, ...(book.sectionNotes[chId] || []));
       deleteChapterQuiet(chId).then(() => {
         syncGhosts(prevCh);
         renderOutline({ secId: newSec.id });
@@ -171,7 +190,7 @@ function outlineLine(kind, chId, secId, index, label, text) {
       list.splice(list.indexOf(sec), 1);
       const at = book.chapterOrder.indexOf(chId) + 1;
       const newId = createChapterAt(at);
-      book.chapterNotes[newId] = sec.text;
+      book.chapterTitles ||= {}; book.chapterTitles[newId] = sec.text;
       scheduleMetaSave();
       syncGhosts(chId);
       renderOutline({ chId: newId });
@@ -209,8 +228,8 @@ function outlineLine(kind, chId, secId, index, label, text) {
           {
             label: "Delete chapter",
             desc: words
-              ? "Its words move to Darlings, recoverable anytime."
-              : "Nothing to save — it just goes.",
+              ? "Keep its prose in Darlings."
+              : "Remove this empty chapter.",
             danger: true,
             value: "delete",
           },
@@ -224,7 +243,7 @@ function outlineLine(kind, chId, secId, index, label, text) {
       const choice = await optionModal("Delete this section?", null, [
         {
           label: "Delete section",
-          desc: "Removes the outline line and its gray ghost from the manuscript. Written prose is never touched.",
+          desc: "Remove the outline prompt; keep written prose.",
           danger: true,
           value: "delete",
         },
@@ -241,40 +260,6 @@ function outlineLine(kind, chId, secId, index, label, text) {
   });
 
   line.appendChild(num);
-  if (kind === "chapter") {
-    // A chapter line carries its title above the note: the same title the
-    // manuscript heading shows (a safer take on hughhowey/neo#22 — titles
-    // and outline notes stay separate things, and edits flow both ways).
-    const col = document.createElement("div");
-    col.className = "ol-col";
-    const title = document.createElement("div");
-    title.className = "ol-title";
-    title.contentEditable = "true";
-    title.spellcheck = false;
-    title.textContent = (book.chapterTitles || {})[chId] || "";
-    title.addEventListener("keydown", (e) => {
-      if (e.key === "Enter" || (e.key === "ArrowDown" && !e.shiftKey)) {
-        e.preventDefault();
-        txt.focus();
-      }
-      e.stopPropagation();
-    });
-    title.addEventListener("blur", () => {
-      const val = title.textContent.trim();
-      book.chapterTitles = book.chapterTitles || {};
-      if ((book.chapterTitles[chId] || "") === val) return;
-      if (val) book.chapterTitles[chId] = val;
-      else delete book.chapterTitles[chId];
-      const span = document.querySelector(`.chapter[data-id="${chId}"] .ch-title`);
-      if (span) span.textContent = val;
-      scheduleMetaSave();
-      renderNav();
-    });
-    col.appendChild(title);
-    col.appendChild(txt);
-    line.appendChild(col);
-    return line;
-  }
   line.appendChild(txt);
   return line;
 }
@@ -481,4 +466,83 @@ async function restoreDarling(id) {
     "Original spot is gone — restored to the end of " +
       (d.chapterLabel || "the manuscript"),
   );
+}
+
+// Shared structural operations for the outline and its optional card view.
+// Chapter IDs and section IDs remain stable, including sections already written over.
+async function moveOutlineChapter(chId, index) {
+  if (!book.chapterOrder.includes(chId)) return;
+  const order = book.chapterOrder.filter(id => id !== chId);
+  order.splice(Math.max(0, Math.min(index, order.length)), 0, chId);
+  if (order.every((id, i) => id === book.chapterOrder[i])) return;
+  snapshotStructure('chapter reorder');
+  book.chapterOrder = order;
+  await saveMeta(); renderChapters();
+  if (currentTab === 'outline') renderOutline();
+}
+
+function createOutlineAccess(bookId, track) {
+  const active = () => book && book.id === bookId;
+  const valid = id => active() && book.chapterOrder.includes(id);
+  return {
+    snapshot() {
+      if (!active()) return [];
+      return book.chapterOrder.map(id => ({ id, title: book.chapterTitles?.[id] || '', sections: structuredClone(book.sectionNotes?.[id] || []) }));
+    },
+    update(id, field, value, sectionId) {
+      if (!valid(id)) return;
+      if (field === 'title') {
+        book.chapterTitles ||= {}; book.chapterTitles[id] = value;
+        const heading = document.querySelector(`.chapter[data-id="${id}"] .ch-title`);
+        if (heading) heading.textContent = value;
+
+      } else if (field === 'section') {
+        const section = book.sectionNotes?.[id]?.find(s => s.id === sectionId);
+        if (!section) return;
+        section.text = value; syncGhosts(id);
+      }
+      scheduleMetaSave(); scheduleNavRefresh();
+    },
+    add: () => track(async () => {
+      if (!active()) return null;
+      snapshotStructure('outline chapter added');
+      const id = createChapterAt(book.chapterOrder.length);
+      await saveMeta(); return id;
+    }),
+    remove: id => track(async () => {
+      if (!valid(id)) return;
+      await chapterMenu(id, book.chapterOrder.indexOf(id));
+    }),
+    move: (id, index) => track(async () => { if (valid(id)) await moveOutlineChapter(id, index); }),
+    addSection(id, afterId) {
+      if (!valid(id)) return;
+      snapshotStructure('outline section added');
+      book.sectionNotes ||= {}; book.sectionNotes[id] ||= [];
+      const section = { id: 'sec-' + crypto.randomUUID(), text: '' };
+      const list = book.sectionNotes[id];
+      const after = afterId ? list.findIndex(s => s.id === afterId) : -1;
+      list.splice(after < 0 ? list.length : after + 1, 0, section);
+      scheduleMetaSave(); return section.id;
+    },
+    removeSection(id, sectionId) {
+      if (!valid(id)) return;
+      snapshotStructure('outline section removed');
+      book.sectionNotes[id] = (book.sectionNotes[id] || []).filter(s => s.id !== sectionId);
+      syncGhosts(id); scheduleMetaSave();
+    },
+    get legacyImported() { return active() && !!book.legacyCardsImported; },
+    importLegacy: cards => track(async () => {
+      if (!active() || book.legacyCardsImported) return;
+      snapshotStructure('legacy cards imported');
+      for (const card of cards) {
+        const id = createChapterAt(book.chapterOrder.length);
+        book.chapterTitles ||= {}; book.chapterTitles[id] = String(card.title || '');
+        book.sectionNotes ||= {};
+        book.sectionNotes[id] = String(card.body || '').split(/\r?\n/).filter(Boolean).map(text => ({id:'sec-'+crypto.randomUUID(),text}));
+        syncGhosts(id);
+      }
+      book.legacyCardsImported = true;
+      await saveMeta(); renderChapters();
+    })
+  };
 }

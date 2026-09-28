@@ -186,80 +186,72 @@ function applyAlign(value) {
 }
 
 function showHelp() {
-  //Toggle between visible and hidden.
-  const existing = document.querySelector(".help-modal-backdrop");
-  if (existing) {
-    existing.remove();
-    return;
-  }
-  const row = (k, d) => `<span class="hk">${k}</span><span>${d}</span>`;
-  const bd = document.createElement("div");
-  bd.className = "modal-backdrop help-modal-backdrop";
-  bd.innerHTML = `
-    <div class="modal" style="width:560px">
-      <h2>NEO Shortcuts</h2>
-
-      <div class="help-sec">Writing</div>
-      <div class="help-grid">
-        ${row('Enter ×2', 'Section break (***)')}
-        ${row('Enter ×3', 'New chapter, auto-numbered')}
-        ${row('⇧Enter', 'Poetry paragraph — verse, a quote, a POV name; italic, set in from the margins. ⇧Enter again continues it; Enter returns to prose')}
-        ${row(KPH, 'Placeholder note')}
-        ${row(KDA, 'Send the selected passage to Darlings')}
-        ${row(K('⌘⇧;', 'Ctrl+Shift+;'), 'Revision pass — echoes, filler, -ly adverbs, name slips. Esc ends it')}
-        ${row(K('⌘⇧L/C/R/J', 'Ctrl+Shift+L/C/R/J'), 'Align paragraph: left, center, right, justify')}
-        ${row(K('⌘⇧O', 'Ctrl+Shift+O'), 'Cycle focus — paragraph, sentence, off')}
-        ${row(K('⌘⌥R', 'Ctrl+Alt+R'), 'Read aloud from the caret, or the selection. Any key stops it')}
-        ${row(KZ, 'Undo big moves (chapter deletes, replace-all, darlings) when not mid-typing')}
-        ${row('-- and ...', 'Become an em dash — and a true ellipsis …')}
-        ${row(K('⌘B · ⌘I', 'Ctrl+B · Ctrl+I'), 'Bold, italic. Quotes curl themselves.')}
-      </div>
-
-      <div class="help-sec">Getting around</div>
-      <div class="help-grid">
-        ${row(K("⌘F", "Ctrl+F"), "Find &amp; replace across the whole book")}
-        ${row(K("⌘PageUp / ⌘PageDown", "Ctrl+PageUp / Ctrl+PageDown"), "Previous / next screen — wraps through available tabs")}
-        ${row("Hover edges", "Left: chapters &amp; outline notes. Right: comments (☉ pins).")}
-        ${row("Esc", "Closes whatever’s open; otherwise back to the shelf")}
-      </div>
-
-      <div class="help-sec">Modes</div>
-      <div class="help-grid">
-        ${row(K("⌘⇧F", "Ctrl+Shift+F"), "Full screen (Esc leaves)")}
-        ${row(K("⌘⇧T", "Ctrl+Shift+T"), "Typewriter scrolling")}
-        ${row(K("⌘;", "Ctrl+;"), "Spellcheck pass (right-click squiggles for fixes)")}
-      </div>
-
-      <div class="help-sec">Files</div>
-      <div class="help-grid">
-        ${row(K("⌘E", "Ctrl+E"), "Email a timestamped draft to yourself")}
-        ${row(K("⌘⇧I", "Ctrl+Shift+I"), "Import .docx / .txt / .md manuscripts")}
-        ${row("File → Export", "txt · md · html · pdf · docx · epub")}
-      </div>
-
-      <div class="help-sec">Mouse</div>
-      <div class="help-grid">
-        ${row("Drag text", "Onto the Darlings tab")}
-        ${row("Right-click", "Books, shelf names, chapter headings, outline lines")}
-        ${row("Drag chapters", "In the left panel, to reorder — everything renumbers")}
-        ${row("Double-click", "A tab, to rename it")}
-        ${row("Click counters", "Cycle word counts · open goals &amp; sprints")}
-        ${row(K("Pinch", "Ctrl+Scroll"), "Zoom the page — text and column together (" + K("⌘0", "Ctrl+0") + " resets)")}
-        ${row("Zoom control", "Bottom bar — +/− buttons, scroll it, or click the % to reset")}
-      </div>
-
-      <div style="text-align:right;margin-top:18px">
-        <button class="m-ok btn-gold">Got it</button>
-      </div>
-    </div>`;
-  document.body.appendChild(bd);
-  const close = () => bd.remove();
-  bd.querySelector(".m-ok").onclick = close;
-  bd.addEventListener("keydown", (e) => {
-    if (e.key === "Escape") {
-      e.stopPropagation();
-      close();
-    }
+  const existing = document.querySelector('.help-modal-backdrop');
+  if (existing) { existing.querySelector('.dialog-close').click(); return; }
+  const row = (key, action) => `<span class="hk">${key}</span><span>${action}</span>`;
+  const group = (title, rows) => `<h3 class="help-sec">${title}</h3><div class="help-grid">${rows.join('')}</div>`;
+  const {bd, close} = settingsDialog({
+    title:'Keyboard shortcuts', scope:'Use these while writing or planning.', className:'help-dialog',
+    content: [
+      group('Write', [
+        row('Enter ×2','Insert a section break.'),
+        row('Enter ×3','Start a chapter.'),
+        row(K('⇧Enter','Shift+Enter'),'Write a poetry paragraph; press Enter to return to prose.'),
+        row(K('⌘B / ⌘I','Ctrl+B / Ctrl+I'),'Toggle bold or italic.'),
+        row(KPH,'Add a placeholder note.'),
+        row(KDA,'Move selected text to Darlings.'),
+        row('-- / ...','Insert an em dash or ellipsis.')
+      ]),
+      group('Edit and review', [
+        row(KZ,'Undo typing; undo structural changes outside text fields.'),
+        row(K('⌘⇧Z','Ctrl+Y'),'Redo typing.'),
+        row(K('⌘X / ⌘C / ⌘V','Ctrl+X / Ctrl+C / Ctrl+V'),'Cut, copy, or paste.'),
+        row(K('⌘⌥⇧V','Ctrl+Shift+V'),'Paste without formatting.'),
+        row(K('⌘A','Ctrl+A'),'Select all text.'),
+        row(K('⌘F','Ctrl+F'),'Find and replace; search the library from the shelf.'),
+        row('Enter / Shift+Enter','Find the next or previous match in search.'),
+        row(K('⌘;','Ctrl+;'),'Check spelling.'),
+        row(K('⌘⇧;','Ctrl+Shift+;'),'Review repeated words and style.'),
+        row(K('⌘⌥R','Ctrl+Alt+R'),'Read aloud; press any key to stop.'),
+        row(K('⌘⇧L / C / R / J','Ctrl+Shift+L / C / R / J'),'Align left, center, right, or justify.')
+      ]),
+      group('Outline and cards', [
+        row(K('⌘⌥C','Ctrl+Alt+C'),'Switch Outline and Cards with the Cards plugin enabled.'),
+        row('Enter','Add an outline line or card subsection.'),
+        row('Tab / Shift+Tab','Indent or outdent an outline line.'),
+        row('Backspace','Remove an empty outline line or subsection.'),
+        row('Alt+arrow keys','Move a card while its drag grip is focused.'),
+        row('Right-click a card','Delete its chapter; keep prose in Darlings.')
+      ]),
+      group('Navigate and view', [
+        row(K('⌘PgUp','Ctrl+PgUp'),'Open the previous screen.'),
+        row(K('⌘PgDn','Ctrl+PgDn'),'Open the next screen.'),
+        row(K('⌘⇧O','Ctrl+Shift+O'),'Cycle paragraph focus, sentence focus, and off.'),
+        row(K('⌘⇧T','Ctrl+Shift+T'),'Toggle typewriter scrolling.'),
+        row(K('⌘⇧F','Ctrl+Shift+F'),'Toggle full screen.'),
+        row(K('⌘+ / ⌘−','Ctrl++ / Ctrl+−'),'Increase or decrease text size.'),
+        row(K('Pinch','Ctrl+Scroll'),'Zoom the page.'),
+        row(K('⌘0','Ctrl+0'),'Reset text size and page zoom.'),
+        row('Esc','Close the active panel or return to the shelf.')
+      ]),
+      group('Files and settings', [
+        row(K('⌘⇧I','Ctrl+Shift+I'),'Import a manuscript.'),
+        row(K('⌘E','Ctrl+E'),'Email a draft to yourself.'),
+        row(K('⌘,','Ctrl+,'),'Open preferences.'),
+        row(K('⌘⇧P','Ctrl+Shift+P'),'Open the Plugin Library.'),
+        row(K('⌘/','Ctrl+/'),'Show these shortcuts.')
+      ]),
+      group('Use the mouse', [
+        row('Hover page edges','Show chapters on the left or notes on the right.'),
+        row('Drag a grip','Reorder chapters or cards.'),
+        row('Drag selected text','Save it on the Darlings tab.'),
+        row('Right-click','Manage books, shelves, chapters, or outline lines.'),
+        row('Double-click a tab','Rename the tab.'),
+        row('Click counters','Change word counts or open goals.')
+      ])
+    ].join(''),
+    actions:'<button class="m-ok btn-gold">Done</button>'
   });
-  bd.querySelector(".m-ok").focus();
+  bd.classList.add('help-modal-backdrop');
+  bd.querySelector('.m-ok').onclick = close;
 }

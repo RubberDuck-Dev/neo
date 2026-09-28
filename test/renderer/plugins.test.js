@@ -36,15 +36,17 @@ test("Note Cards retains data across disable and re-enable", async (t) => {
   ` });
   try {
     await r.openBook();
-    await r.page.click('[data-tab="cards"]');
+    await r.page.click('[data-tab="outline"]');
+    await r.page.click('[data-outline-view="cards"]');
     await r.page.click(".add-card");
-    await r.page.locator(".note-card-title").fill("Keep this research");
+    await r.page.locator(".note-card-title").last().fill("Keep this research");
     await r.page.evaluate(() => NeoPlugins.setEnabled("noteCards", false));
     assert.equal(await r.page.locator('[data-tab="cards"]').count(), 0);
     await r.page.evaluate(() => NeoPlugins.setEnabled("noteCards", true));
-    await r.page.click('[data-tab="cards"]');
-    assert.equal(await r.page.locator(".note-card-title").textContent(), "Keep this research");
-    assert.equal(await r.page.locator(".note-card").count(), 1);
+    await r.page.click('[data-tab="outline"]');
+    await r.page.click('[data-outline-view="cards"]');
+    assert.equal(await r.page.locator(".note-card-title").last().textContent(), "Keep this research");
+    assert.equal(await r.page.locator(".note-card").count(), 3);
     assert.deepEqual(r.errors, []);
   } finally { await r.close(); }
 });
@@ -159,20 +161,25 @@ test("pending spelling responses cannot repaint after disabling", async (t) => {
 test("closing a book waits for outstanding card writes", async (t) => {
   if (skip(t)) return;
   const r = await openNeo({ lib: { authors: [{ id: "a1", name: "A. Writer", plugins: ["noteCards"] }] }, init: `
-    api.writeJSON = (b,n,d) => new Promise((resolve) => {
-      window.__finishCards = () => { calls.push(['writeJSON',b,n,d]); resolve(true); };
-    });
+    const originalWrite = api.writeBookMeta;
+    api.writeBookMeta = (b,m) => {
+      if (!window.__holdCards) return originalWrite(b,m);
+      return new Promise(resolve => { (window.__cardWrites ||= []).push(() => { calls.push(['writeBookMeta',b,m]); resolve(true); }); });
+    };
+    window.__finishCards = () => { window.__holdCards=false; window.__cardWrites.splice(0).forEach(f=>f()); };
   ` });
   try {
     await r.openBook();
-    await r.page.click('[data-tab="cards"]');
+    await r.page.click('[data-tab="outline"]');
+    await r.page.click('[data-outline-view="cards"]');
+    await r.page.evaluate(()=>{window.__holdCards=true;});
     await r.page.click(".add-card");
-    await r.page.waitForFunction(() => typeof window.__finishCards === "function");
+    await r.page.waitForFunction(() => window.__cardWrites?.length >= 2);
     await r.page.click("#back-to-shelf");
     assert.equal(await r.page.locator("#editor-view").isVisible(), true);
     await r.page.evaluate(() => window.__finishCards());
     await r.page.waitForFunction(() => document.querySelector("#editor-view").hidden);
-    assert.equal((await r.calls("writeJSON")).length, 1);
+    assert.ok((await r.calls("writeBookMeta")).length >= 2);
     assert.deepEqual(r.errors, []);
   } finally { await r.close(); }
 });

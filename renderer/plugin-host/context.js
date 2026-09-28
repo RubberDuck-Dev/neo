@@ -68,6 +68,8 @@ function configurePlugins() {
           const snapshot = structuredClone(data);
           return track(() => window.neo.writeJSON(bookId, name, snapshot));
         },
+        outline: createOutlineAccess(bookId, track),
+        mountOutlineControls(node) { $('#outline-tools').appendChild(node); return context.own(node); },
         chapterWords, chapterText, countWords, editorElFor,
         wordCount: () => book ? bookWordCount() : 0,
         refreshCounters: () => { if (book) updateCounters(); },

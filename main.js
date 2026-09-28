@@ -1214,43 +1214,45 @@ function buildMenu() {
     {
       label: 'File',
       submenu: [
+        { label: isMac ? 'Saving & Recovery…' : 'Saving && Recovery…', click: () => sendToWindow({ type: 'syncSettings' }) },
+        { label: 'Book Settings…', click: () => sendToWindow({ type: 'bookSettings' }) },
+        {
+          label: isMac ? 'Progress & Goals…' : 'Progress && Goals…',
+          click: () => sendToWindow({ type: 'stats' })
+        },
+        { label: 'Cover Art…', click: () => sendToWindow({ type: 'coverArt' }) },
+        { type: 'separator' },
         {
           label: 'Export',
           submenu: [
-            { label: 'Plain Text (.txt)', click: () => sendToWindow({ type: 'export', format: 'txt' }) },
-            { label: 'Markdown (.md)', click: () => sendToWindow({ type: 'export', format: 'md' }) },
-            { label: 'Web Page (.html)', click: () => sendToWindow({ type: 'export', format: 'html' }) },
-            { label: 'PDF (.pdf)', click: () => sendToWindow({ type: 'export', format: 'pdf' }) },
             { label: 'Word (.docx)', click: () => sendToWindow({ type: 'export', format: 'docx' }) },
             { label: 'Manuscript Format (.docx)…', click: () => sendToWindow({ type: 'export', format: 'manuscript' }) },
-            { label: 'EPUB (.epub)', click: () => sendToWindow({ type: 'export', format: 'epub' }) }
+            { label: 'PDF (.pdf)', click: () => sendToWindow({ type: 'export', format: 'pdf' }) },
+            { label: 'EPUB (.epub)', click: () => sendToWindow({ type: 'export', format: 'epub' }) },
+            { label: 'Plain Text (.txt)', click: () => sendToWindow({ type: 'export', format: 'txt' }) },
+            { label: 'Markdown (.md)', click: () => sendToWindow({ type: 'export', format: 'md' }) },
+            { label: 'Web Page (.html)', click: () => sendToWindow({ type: 'export', format: 'html' }) }
           ]
         },
         { label: 'Publishing Details…', click: () => sendToWindow({ type: 'publishingDetails' }) },
         { type: 'separator' },
         {
-          label: 'Email Draft to Myself',
+          label: 'Email Draft to Myself…',
           accelerator: 'CmdOrCtrl+E',
           click: () => sendToWindow({ type: 'emailDraft' })
         },
         { label: 'Email Settings…', click: () => sendToWindow({ type: 'emailSettings' }) },
-        { label: isMac ? 'Saving & Recovery…' : 'Saving && Recovery…', click: () => sendToWindow({ type: 'syncSettings' }) },
-        { label: 'Preferences…', accelerator: 'CmdOrCtrl+,', click: () => sendToWindow({ type: 'preferences' }) },
-        { label: 'Book Settings…', click: () => sendToWindow({ type: 'bookSettings' }) },
-        { label: 'Cover Art…', click: () => sendToWindow({ type: 'coverArt' }) },
-        {
-          label: isMac ? 'Progress & Goals…' : 'Progress && Goals…',
-          click: () => sendToWindow({ type: 'stats' })
-        },
         { type: 'separator' },
         {
           label: 'Import Manuscripts…',
           accelerator: 'CmdOrCtrl+Shift+I',
           click: () => sendToWindow({ type: 'import' })
         },
+        { type: 'separator' },
         { label: 'Reshelve a Book…', click: () => sendToWindow({ type: 'reshelve' }) },
         { label: 'Library Folder…', click: () => { chooseLibraryFolder().catch((err) => logError('library folder', err)); } },
         { type: 'separator' },
+        { label: 'Preferences…', accelerator: 'CmdOrCtrl+,', click: () => sendToWindow({ type: 'preferences' }) },
         ...(isMac ? [{ role: 'close' }] : [{ role: 'quit' }])
       ]
     },
@@ -1273,6 +1275,15 @@ function buildMenu() {
           click: () => sendToWindow({ type: 'spellcheck' })
         },
         {
+          label: 'Spellcheck Language',
+          submenu: Object.entries(SPELL_LANGUAGES).map(([code, lang]) => ({
+            label: lang.label,
+            type: 'radio',
+            checked: spelling.language === code,
+            click: () => sendToWindow({ type: 'spellLanguage', value: code })
+          }))
+        },
+        {
           label: 'Revision Pass',
           accelerator: 'CmdOrCtrl+Shift+;',
           click: () => sendToWindow({ type: 'revisionPass' })
@@ -1282,23 +1293,34 @@ function buildMenu() {
           accelerator: 'CmdOrCtrl+Alt+R',
           click: () => sendToWindow({ type: 'readAloud' })
         },
-        { label: 'Read Aloud Settings…', click: () => sendToWindow({ type: 'readAloudSettings' }) },
-        {
-          label: 'Spellcheck Language',
-          submenu: Object.entries(SPELL_LANGUAGES).map(([code, lang]) => ({
-            label: lang.label,
-            type: 'radio',
-            checked: spelling.language === code,
-            click: () => sendToWindow({ type: 'spellLanguage', value: code })
-          }))
-        }
+        { label: 'Voice Settings…', click: () => sendToWindow({ type: 'readAloudSettings' }) }
       ]
     },
     {
       label: 'Format',
       submenu: [
         {
-          label: 'Body Font',
+          label: 'Paragraph Alignment',
+          submenu: [
+            { label: 'Left', accelerator: 'CmdOrCtrl+Shift+L', click: () => sendToWindow({ type: 'align', value: 'left' }) },
+            { label: 'Center', accelerator: 'CmdOrCtrl+Shift+C', click: () => sendToWindow({ type: 'align', value: 'center' }) },
+            { label: 'Right', accelerator: 'CmdOrCtrl+Shift+R', click: () => sendToWindow({ type: 'align', value: 'right' }) },
+            { label: 'Justify', accelerator: 'CmdOrCtrl+Shift+J', click: () => sendToWindow({ type: 'align', value: 'justify' }) }
+          ]
+        },
+        // ticks when the caret sits in a poetry paragraph; ⇧Enter is the
+        // editor's own key, so show it without registering a native handler
+        {
+          label: 'Poetry Paragraph',
+          // macOS cannot display an accelerator without registering it.
+          accelerator: isMac ? undefined : 'Shift+Enter', registerAccelerator: false,
+          type: 'checkbox',
+          checked: poetryState,
+          click: () => sendToWindow({ type: 'poetry' })
+        },
+        { type: 'separator' },
+        {
+          label: 'Manuscript Font',
           submenu: [
             ...bodyFonts.map((f) => ({
               label: f,
@@ -1315,17 +1337,12 @@ function buildMenu() {
             { label: 'Fantasy', click: () => sendToWindow({ type: 'dropCap', value: 'fantasy' }) },
             { label: 'Sci-Fi', click: () => sendToWindow({ type: 'dropCap', value: 'scifi' }) }
           ]
-        },
-        {
-          label: 'Align Paragraph',
-          submenu: [
-            { label: 'Left', accelerator: 'CmdOrCtrl+Shift+L', click: () => sendToWindow({ type: 'align', value: 'left' }) },
-            { label: 'Center', accelerator: 'CmdOrCtrl+Shift+C', click: () => sendToWindow({ type: 'align', value: 'center' }) },
-            { label: 'Right', accelerator: 'CmdOrCtrl+Shift+R', click: () => sendToWindow({ type: 'align', value: 'right' }) },
-            { label: 'Justify', accelerator: 'CmdOrCtrl+Shift+J', click: () => sendToWindow({ type: 'align', value: 'justify' }) }
-          ]
-        },
-        { type: 'separator' },
+        }
+      ]
+    },
+    {
+      label: 'View',
+      submenu: [
         { label: 'Larger Text', accelerator: 'CmdOrCtrl-Plus', click: () => sendToWindow({ type: 'fontSize', value: 1 }) },
         { label: 'Smaller Text', accelerator: 'CmdOrCtrl-Minus', click: () => sendToWindow({ type: 'fontSize', value: -1 }) },
         { label: 'Reset Text Size', accelerator: 'CmdOrCtrl+0', click: () => sendToWindow({ type: 'fontSize', value: 0 }) },
@@ -1347,19 +1364,6 @@ function buildMenu() {
           ]
         },
         { type: 'separator' },
-        // ticks when the caret sits in a poetry paragraph; ⇧Enter is the
-        // editor's own key, so no accelerator here
-        {
-          label: 'Poetry Paragraph\t⇧Enter',
-          type: 'checkbox',
-          checked: poetryState,
-          click: () => sendToWindow({ type: 'poetry' })
-        }
-      ]
-    },
-    {
-      label: 'View',
-      submenu: [
         {
           label: 'Full Screen',
           accelerator: 'CmdOrCtrl+Shift+F',
@@ -1370,10 +1374,10 @@ function buildMenu() {
         },
         { type: 'separator' },
         {
-          label: 'Page',
+          label: 'Page Appearance',
           submenu: [
-            { label: 'Night', click: () => sendToWindow({ type: 'pageTheme', value: 'night' }) },
-            { label: 'Paper', click: () => sendToWindow({ type: 'pageTheme', value: 'paper' }) }
+            { label: 'Dark Paper', click: () => sendToWindow({ type: 'pageTheme', value: 'night' }) },
+            { label: 'Light Paper', click: () => sendToWindow({ type: 'pageTheme', value: 'paper' }) }
           ]
         },
         {
@@ -1393,7 +1397,7 @@ function buildMenu() {
       label: 'Help',
       submenu: [
         {
-          label: 'NEO Shortcuts',
+          label: 'Keyboard Shortcuts…',
           accelerator: 'CmdOrCtrl+/',
           click: () => sendToWindow({ type: 'help' })
         },

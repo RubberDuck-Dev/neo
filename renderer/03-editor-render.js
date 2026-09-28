@@ -37,7 +37,9 @@ async function openBook(bookId) {
   $$('.tab[data-tab="outline"]')[0].textContent = book.tabNames.outline;
   await NeoPlugins.reconcile();
 
+  const migratedSummaries = migrateOutlineSummaries();
   renderChapters();
+  migratedSummaries.forEach(syncGhosts);
   renderStickies();
   migrateDarlingAnchors(); // sweep legacy invisible markers out of the prose
   reconcileMarks(); // re-adopt any note marks orphaned by cut/paste

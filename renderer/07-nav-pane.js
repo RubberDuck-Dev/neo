@@ -14,7 +14,7 @@ function renderNav() {
   navRefreshPending = false;
   const list = $('#nav-list');
   list.innerHTML = '';
-  book.chapterNotes = book.chapterNotes || {};
+  book.sectionNotes ||= {};
   book.chapterOrder.forEach((chId, i) => {
     const words = chapterWords(chId);
     const flagged = stickies.some((s) => s.chapterId === chId && !s.resolved);
@@ -48,7 +48,7 @@ function renderNav() {
     note.className = "nav-note";
     note.contentEditable = "true";
     note.spellcheck = false;
-    note.textContent = book.chapterNotes[chId] || "";
+    note.textContent = book.sectionNotes[chId]?.[0]?.text || "";
     note.addEventListener("click", (e) => e.stopPropagation());
     note.addEventListener("keydown", (e) => {
       if (e.key === "Enter") {
@@ -58,7 +58,11 @@ function renderNav() {
       e.stopPropagation();
     });
     note.addEventListener("blur", () => {
-      book.chapterNotes[chId] = note.textContent.trim();
+      const text = note.textContent.trim();
+      const sections = book.sectionNotes[chId] ||= [];
+      if (sections.length) sections[0].text = text;
+      else if (text) sections.push({id:'sec-'+crypto.randomUUID(),text});
+      syncGhosts(chId);
       scheduleMetaSave();
     });
     item.appendChild(note);
@@ -208,12 +212,7 @@ navList.addEventListener("drop", async (e) => {
   }
   const from = book.chapterOrder.indexOf(chId);
   if (from === -1) return;
-  snapshotStructure("chapter reorder");
-  book.chapterOrder = book.chapterOrder.filter((c) => c !== chId);
-  book.chapterOrder.splice(index, 0, chId);
-  await saveMeta();
-  renderChapters(); // renumbers heads and rebuilds the nav
-  if (currentTab === "outline") renderOutline();
+  await moveOutlineChapter(chId, index);
 });
 
 function highlightNav() {
