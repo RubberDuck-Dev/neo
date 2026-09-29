@@ -23,9 +23,9 @@ This branch builds on [hughhowey/neo](https://github.com/hughhowey/neo). The mai
 - **GitHub backup and local versions:** Connect an empty private repository for optional background library backups. File → Saving & Recovery keeps local checkpoints, chapter-by-chapter comparison, and restore separate from the GitHub backup tab.
 - **Pinnable panes:** Pin the chapter list or Notes pane open beside the manuscript; unpinned panes still tuck away when you leave them.
 - **Read Aloud and Revision Pass:** Listen from the caret or a selection with sentence highlighting; mark repeated words, filler, adverbs, and inconsistent names only when you start a revision pass.
-- **Publishing details:** File → Publishing Details stores an author's submission contact block and reusable end matter. Export a standard-submission Word document, or add the author's Also By, bio, and copyright text to ordinary exports. A book can omit the end matter.
+- **Publishing details:** File → Publishing Details keeps submission contacts, front matter, and back matter in three tabs. Book pages such as dedications and acknowledgments export separately from chapters; copyright, bio, and Also By can be shared by a pen name.
 - **Outline Cards and Story Map:** Toggle Cards inside Outline to plan with movable index cards tied to the same chapters and section notes. Story Map adds acts, beats, threads, and progress without changing manuscript prose.
-- **Palette themes:** Choose a preset or make a custom writing-room and page palette in the plugin's Palette Studio, with separate choices for each author.
+- **Palette themes:** Choose a preset or make a custom writing-room and page palette in Palette Studio. Each pen name can also choose its manuscript font there or in Format.
 - **Writing Sprints:** Enable the plugin for a timed or word-target sprint in Progress & Goals; pause or stop it from the counter.
 - **Library and chapter tools:** Search every book, mark chapters Draft/Revised/Done, move books between authors, reshelve books found on disk, and remove a shelf without deleting its books.
 
@@ -87,7 +87,7 @@ Daily word goals and a NaNoWriMo-style progress chart. Want to race the clock? E
 
 **Exports** 
 
-EPUB 3 with a proper table of contents built to KDP's guidelines, Word .docx, PDF, HTML, markdown, and plain text. File → Publishing Details… keeps two tabs per pen name. Manuscript holds your submission contact details. End Matter holds an Also By list, About the Author and a copyright page, written once; they're added to the back of every export of that author's books (never to the manuscript itself), and any book can opt out. Submitting to agents or magazines? File → Export → Manuscript Format builds a standard-submission .docx (Times New Roman, double spaced, contact block, rounded word count, running header). Your contact details (Publishing Details → Manuscript) are saved on this computer only. Email a timestamped PDF snapshot to yourself with a SHA-256 fingerprint of the text in the body. Might come in handy someday.
+EPUB 3 with a table of contents, Word .docx, PDF, HTML, markdown, and plain text. Publishing Details has Manuscript, Front matter, and Back matter tabs. Fill only the pages you need: half title, copyright, dedication, acknowledgments, About the Author, or Also By. EPUB labels pages by type; Word starts each on a new page. Copyright, About the Author, and Also By are shared by a pen name and can be omitted for a book. File → Export → Manuscript Format builds a standard-submission .docx (Times New Roman, double spaced, contact block, rounded word count, running header) without publishing pages. Submission contact details stay on this computer. You can also email yourself a timestamped PDF snapshot with a SHA-256 fingerprint.
 
 **Import** 
 

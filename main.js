@@ -1295,25 +1295,17 @@ function buildMenu() {
       label: 'Format',
       submenu: [
         {
-          label: 'Paragraph Alignment',
+          label: 'Paragraph',
           submenu: [
             { label: 'Left', accelerator: 'CmdOrCtrl+Shift+L', click: () => sendToWindow({ type: 'align', value: 'left' }) },
             { label: 'Center', accelerator: 'CmdOrCtrl+Shift+C', click: () => sendToWindow({ type: 'align', value: 'center' }) },
             { label: 'Right', accelerator: 'CmdOrCtrl+Shift+R', click: () => sendToWindow({ type: 'align', value: 'right' }) },
-            { label: 'Justify', accelerator: 'CmdOrCtrl+Shift+J', click: () => sendToWindow({ type: 'align', value: 'justify' }) }
+            { label: 'Justify', accelerator: 'CmdOrCtrl+Shift+J', click: () => sendToWindow({ type: 'align', value: 'justify' }) },
+            { type: 'separator' },
+            { label: 'Poetry Paragraph', type: 'checkbox', checked: poetryState,
+              click: () => sendToWindow({ type: 'poetry' }) }
           ]
         },
-        // ticks when the caret sits in a poetry paragraph; ⇧Enter is the
-        // editor's own key, so show it without registering a native handler
-        {
-          label: 'Poetry Paragraph',
-          // macOS cannot display an accelerator without registering it.
-          accelerator: isMac ? undefined : 'Shift+Enter', registerAccelerator: false,
-          type: 'checkbox',
-          checked: poetryState,
-          click: () => sendToWindow({ type: 'poetry' })
-        },
-        { type: 'separator' },
         {
           label: 'Manuscript Font',
           submenu: [
@@ -1340,49 +1332,57 @@ function buildMenu() {
     {
       label: 'View',
       submenu: [
-        { label: 'Larger Text', accelerator: 'CmdOrCtrl-Plus', click: () => sendToWindow({ type: 'fontSize', value: 1 }) },
-        { label: 'Smaller Text', accelerator: 'CmdOrCtrl-Minus', click: () => sendToWindow({ type: 'fontSize', value: -1 }) },
-        { label: 'Reset Text Size', accelerator: 'CmdOrCtrl+0', click: () => sendToWindow({ type: 'fontSize', value: 0 }) },
-        { type: 'separator' },
         {
-          label: 'Typewriter Scrolling',
-          accelerator: 'CmdOrCtrl+Shift+T',
-          type: 'checkbox', checked: typewriterState,
-          click: () => sendToWindow({ type: 'typewriter' })
-        },
-        {
-          label: 'Focus Mode',
+          label: 'Text Size',
           submenu: [
-            { label: 'Cycle', accelerator: 'CmdOrCtrl+Shift+O', click: () => sendToWindow({ type: 'focusCycle' }) },
-            { type: 'separator' },
-            { label: 'Sentence', click: () => sendToWindow({ type: 'focus', value: 'sentence' }) },
-            { label: 'Paragraph', click: () => sendToWindow({ type: 'focus', value: 'paragraph' }) },
-            { label: 'Off', click: () => sendToWindow({ type: 'focus', value: 'off' }) }
+            { label: 'Larger Text', accelerator: 'CmdOrCtrl-Plus', click: () => sendToWindow({ type: 'fontSize', value: 1 }) },
+            { label: 'Smaller Text', accelerator: 'CmdOrCtrl-Minus', click: () => sendToWindow({ type: 'fontSize', value: -1 }) },
+            { label: 'Reset Text Size', accelerator: 'CmdOrCtrl+0', click: () => sendToWindow({ type: 'fontSize', value: 0 }) }
           ]
         },
-        { type: 'separator' },
         {
-          label: 'Full Screen',
-          accelerator: 'CmdOrCtrl+Shift+F',
-          click: () => {
-            const w = BrowserWindow.getFocusedWindow();
-            if (w) w.setFullScreen(!w.isFullScreen());
-          }
+          label: 'Writing View',
+          submenu: [
+            {
+              label: 'Typewriter Scrolling',
+              accelerator: 'CmdOrCtrl+Shift+T',
+              type: 'checkbox', checked: typewriterState,
+              click: () => sendToWindow({ type: 'typewriter' })
+            },
+            {
+              label: 'Focus Mode',
+              submenu: [
+                { label: 'Cycle', accelerator: 'CmdOrCtrl+Shift+O', click: () => sendToWindow({ type: 'focusCycle' }) },
+                { type: 'separator' },
+                { label: 'Sentence', click: () => sendToWindow({ type: 'focus', value: 'sentence' }) },
+                { label: 'Paragraph', click: () => sendToWindow({ type: 'focus', value: 'paragraph' }) },
+                { label: 'Off', click: () => sendToWindow({ type: 'focus', value: 'off' }) }
+              ]
+            },
+            { type: 'separator' },
+            {
+              label: 'Full Screen',
+              accelerator: 'CmdOrCtrl+Shift+F',
+              click: () => {
+                const w = BrowserWindow.getFocusedWindow();
+                if (w) w.setFullScreen(!w.isFullScreen());
+              }
+            }
+          ]
         },
-        { type: 'separator' },
         {
-          label: 'Page Appearance',
+          label: 'Appearance',
           submenu: [
             { label: 'Dark Paper', type: 'radio', checked: viewState.pageTheme === 'night', click: () => sendToWindow({ type: 'pageTheme', value: 'night' }) },
-            { label: 'Light Paper', type: 'radio', checked: viewState.pageTheme === 'paper', click: () => sendToWindow({ type: 'pageTheme', value: 'paper' }) }
+            { label: 'Light Paper', type: 'radio', checked: viewState.pageTheme === 'paper', click: () => sendToWindow({ type: 'pageTheme', value: 'paper' }) },
+            { type: 'separator' },
+            {
+              label: 'Brighter Interface',
+              type: 'checkbox', checked: viewState.uiBright,
+              click: () => sendToWindow({ type: 'uiBright' })
+            }
           ]
         },
-        {
-          label: 'Brighter Interface',
-          type: 'checkbox', checked: viewState.uiBright,
-          click: () => sendToWindow({ type: 'uiBright' })
-        },
-        { type: 'separator' },
         { label: 'Language', submenu: uiI18n.choices().map(({ code, name }) => ({
           label: name, type: 'radio', checked: uiI18n.current() === code,
           click: () => uiI18n.choose(code)

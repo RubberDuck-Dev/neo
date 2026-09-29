@@ -109,11 +109,9 @@ function authorForBook() {
   return ownerOfBook(book.id) || (library.authors || []).find((a) => a.name === book.author) || currentAuthor();
 }
 
-/* ---------- Shared end matter ---------- */
-// About the Author, Also by, and a copyright page, written once per pen name
-// and added to the back of every export of that author's books. The
-// manuscript never contains them; they appear only in exported files.
-// {year}, {title} and {author} are filled in at export time.
+/* ---------- Shared author pages ---------- */
+// Copyright, About the Author, and Also By remain pen-name defaults. A book
+// adds its own front and back pages in book.frontMatter / book.backMatter.
 
 function otherTitlesBy(author) {
   const homeId = library.authors[0].id;
@@ -121,43 +119,12 @@ function otherTitlesBy(author) {
   return ids.filter((id) => !book || id !== book.id);
 }
 
-function endMatterSections(d) {
-  if (!book || book.endMatterOff) return [];
-  const author = authorForBook();
-  const m = author.endMatter || {};
-  const fill = (t) => String(t || "")
-    .replace(/\{year\}/g, String(new Date().getFullYear()))
-    .replace(/\{title\}/g, d.title || "")
-    .replace(/\{author\}/g, d.author || author.name || "");
-  const paras = (text, align) => parasFromHtml(fill(text).split(/\r?\n/).map((line) => line.trim())
-    .filter(Boolean).map((line) => `<p${align ? ` style="text-align:${align}"` : ""}>${escHtml(line)}</p>`).join(""));
-  const out = [];
-  const add = (heading, text, align) => {
-    const p = paras(text, align);
-    if (p.length) out.push({ num: d.sections.length + out.length + 1, heading, paras: p, matter: true });
-  };
-  add(`Also by ${d.author || author.name}`, m.alsoBy, "center");
-  add("About the Author", m.about, "");
-  add("Copyright", m.copyright, "center");
-  return out;
-}
-
-function withEndMatter(d) {
-  const extra = endMatterSections(d);
-  if (!extra.length) return d;
-  // a one-chapter story exports without a heading; give it one once other
-  // sections follow, so the reader can tell where the story ends
-  const sections = d.sections.length === 1 && !d.sections[0].heading
-    ? [{ ...d.sections[0], heading: d.title }]
-    : d.sections;
-  return { ...d, sections: [...sections, ...extra] };
-}
-
-/* ---------- Publishing details: one window, two tabs ---------- */
+/* ---------- Publishing details: contact, front matter, back matter ---------- */
 // File → Publishing Details… Everything NEO needs to dress a book for the
 // outside world, per pen name:
 //   Manuscript  — contact block for standard submissions (this computer only)
-//   End matter  — Also by, About the Author, Copyright (added to exports)
+//   Front matter — book pages plus the pen name's copyright default
+//   Back matter  — book pages plus the pen name's About/Also By pages
 // The byline is always the pen name, so it isn't asked for here.
 
 function hasSubmissionDetails(author) {
@@ -179,6 +146,8 @@ function openPublishingDetails({ tab = "manuscript", exportAfter = false } = {})
   const author = book ? authorForBook() : currentAuthor();
   const sub = author.submission || {};
   const m = author.endMatter || {};
+  const front = book?.frontMatter || {};
+  const back = book?.backMatter || {};
   const bookLanguage = book ? NeoLanguage.manuscriptLanguage(book) : "";
   const knownLanguage = manuscriptLanguages.some(([code]) => code === bookLanguage);
   document.querySelector(".pub-backdrop")?.remove();
@@ -189,7 +158,8 @@ function openPublishingDetails({ tab = "manuscript", exportAfter = false } = {})
       <div class="stats-modal-head dialog-head"><div><h2>Publishing details</h2><p class="dialog-scope">This author · ${escHtml(author.name || "Anonymous")}</p></div><button class="m-cancel btn-quiet" title="Close">×</button></div>
       <div class="dialog-body"><div class="pub-tabs" role="tablist">
         <button role="tab" data-tab="manuscript">Manuscript</button>
-        <button role="tab" data-tab="matter">End matter</button>
+        <button role="tab" data-tab="front">Front matter</button>
+        <button role="tab" data-tab="matter">Back matter</button>
       </div>
 
       <section data-panel="manuscript">
@@ -208,13 +178,21 @@ function openPublishingDetails({ tab = "manuscript", exportAfter = false } = {})
           <p class="soft">Set from your spellcheck choice when the book was created. Change it here for exports and writing tools.</p><p class="dialog-error" role="status"></p></div>` : ""}
       </section>
 
+      <section data-panel="front">
+        <p class="soft">Each filled page exports before the story. These pages stay outside your manuscript chapters.</p>
+        ${book ? `<label>Half title <input data-front="halfTitle" value="${escHtml(front.halfTitle || '')}" placeholder="${escHtml(book.title || 'Book title')}"/></label>` : '<p class="soft">Open a book to add its half title or dedication.</p>'}
+        <label>Copyright <textarea data-m="copyright" rows="4" placeholder="Copyright © {year} {author}&#10;All rights reserved.">${escHtml(m.copyright || '')}</textarea></label>
+        <p class="soft">Copyright is shared by this pen name. {year}, {title}, and {author} fill in at export.</p>
+        ${book ? `<label>Dedication <textarea data-front="dedication" rows="3">${escHtml(front.dedication || '')}</textarea></label>` : ''}
+      </section>
+
       <section data-panel="matter">
-        <p class="soft">Added to the back of every ${escHtml(author.name || "")} book when you export it (EPUB, Word, PDF, web page, text). Your manuscript stays as it is. {year}, {title} and {author} fill themselves in.</p>
+        <p class="soft">Each filled page exports after the story. About the Author and Also By are shared by this pen name.</p>
+        ${book ? `<label>Acknowledgments <textarea data-back="acknowledgments" rows="4">${escHtml(back.acknowledgments || '')}</textarea></label>` : '<p class="soft">Open a book to add acknowledgments.</p>'}
         <label>Also by <textarea data-m="alsoBy" rows="4" placeholder="One title per line">${escHtml(m.alsoBy || "")}</textarea></label>
         <div class="sync-actions" style="margin-top:4px"><button class="btn-quiet" data-fill>Fill from my shelves</button></div>
         <label>About the Author <textarea data-m="about" rows="4">${escHtml(m.about || "")}</textarea></label>
-        <label>Copyright page <textarea data-m="copyright" rows="4" placeholder="Copyright © {year} {author}&#10;All rights reserved.">${escHtml(m.copyright || "")}</textarea></label>
-        ${book ? `<label class="sync-switch" style="margin-top:12px"><input type="checkbox" data-include ${book.endMatterOff ? "" : "checked"}/> <span>Include in “${escHtml(book.title || "Untitled")}”</span></label>` : ""}
+        ${book ? `<label class="sync-switch" style="margin-top:12px"><input type="checkbox" data-include ${book.endMatterOff ? "" : "checked"}/> <span>Include shared author pages in “${escHtml(book.title || "Untitled")}”</span></label>` : ""}
       </section>
 
       </div><div class="dialog-footer"><button class="m-cancel btn-quiet">Cancel</button> <button class="m-ok btn-gold">${exportAfter ? "Save &amp; export manuscript" : "Save"}</button></div>
@@ -222,11 +200,25 @@ function openPublishingDetails({ tab = "manuscript", exportAfter = false } = {})
   document.body.appendChild(bd);
 
   const show = (name) => {
-    bd.querySelectorAll("[data-tab]").forEach((b) => b.classList.toggle("active", b.dataset.tab === name));
+    bd.querySelectorAll("[data-tab]").forEach((b) => {
+      const selected = b.dataset.tab === name;
+      b.classList.toggle("active", selected);
+      b.setAttribute('aria-selected', String(selected));
+      b.tabIndex = selected ? 0 : -1;
+    });
     bd.querySelectorAll("[data-panel]").forEach((p) => (p.hidden = p.dataset.panel !== name));
     bd.querySelector(`[data-panel="${name}"] input, [data-panel="${name}"] textarea`)?.focus();
   };
-  bd.querySelectorAll("[data-tab]").forEach((b) => (b.onclick = () => show(b.dataset.tab)));
+  bd.querySelectorAll("[data-tab]").forEach((b) => {
+    b.onclick = () => show(b.dataset.tab);
+    b.onkeydown = event => {
+      if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return;
+      event.preventDefault();
+      const tabs = [...bd.querySelectorAll('.pub-tabs [data-tab]')];
+      const next = tabs[(tabs.indexOf(b) + (event.key === 'ArrowRight' ? 1 : -1) + tabs.length) % tabs.length];
+      next.click(); next.focus();
+    };
+  });
   const languageSelect = bd.querySelector("#pub-language");
   if (languageSelect) languageSelect.onchange = () => {
     bd.querySelector("#pub-language-other-row").hidden = languageSelect.value !== "other";
@@ -258,6 +250,11 @@ function openPublishingDetails({ tab = "manuscript", exportAfter = false } = {})
     }
     author.submission = Object.fromEntries([...bd.querySelectorAll("[data-f]")].map((el) => [el.dataset.f, el.value.trim()]));
     author.endMatter = Object.fromEntries([...bd.querySelectorAll("[data-m]")].map((el) => [el.dataset.m, el.value.trim()]));
+    if (book) {
+      book.frontMatter = { ...book.frontMatter, ...Object.fromEntries([...bd.querySelectorAll('[data-front]')].map(el => [el.dataset.front, el.value.trim()])) };
+      book.backMatter = { ...book.backMatter, ...Object.fromEntries([...bd.querySelectorAll('[data-back]')].map(el => [el.dataset.back, el.value.trim()])) };
+      scheduleMetaSave();
+    }
     await window.neo.writeLibrary(library);
     if (book && nextLanguage && book.language !== nextLanguage) {
       book.language = nextLanguage;

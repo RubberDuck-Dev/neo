@@ -28,10 +28,11 @@ const BODY_FONT_CHOICES = IS_MAC
 
 function applyFonts() {
   const f = library.fonts || {};
-  if (f.body && typeof f.body === "string") {
+  const bodyFont = currentAuthor().bodyFont || f.body || 'Georgia';
+  if (bodyFont) {
     document.documentElement.style.setProperty(
       "--body-font",
-      bodyFontStack(f.body),
+      bodyFontStack(bodyFont),
     );
   }
   if (f.dropcap && DROPCAP_FONTS[f.dropcap]) {
@@ -87,7 +88,7 @@ async function pickLocalFont() {
     document.body.appendChild(bd);
     const input = bd.querySelector('input');
     const list = bd.querySelector('.font-list');
-    const current = (library.fonts || {}).body || 'Georgia';
+    const current = currentAuthor().bodyFont || (library.fonts || {}).body || 'Georgia';
     bd.querySelector('.font-now').textContent = 'Now: ' + current;
     const done = (val) => { bd.remove(); resolve(val); };
     const render = () => {

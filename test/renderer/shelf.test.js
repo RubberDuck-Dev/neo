@@ -112,6 +112,66 @@ test('Publishing Details: first manuscript export asks once, then exports', asyn
   } finally { await r.close(); }
 });
 
+test('front and back matter export as typed pages outside the chapters', async (t) => {
+  if (needsBrowser(t)) return;
+  const r = await openNeo({ init: `api.exportSave = async payload => { (window.__exports ||= []).push(payload); return '/tmp/book'; };` });
+  try {
+    await r.openBook();
+    await r.menu({ type: 'publishingDetails' });
+    await r.page.click('.pub-tabs [data-tab="front"]');
+    assert.equal(await r.page.locator('[data-front="epigraph"], [data-front="foreword"], [data-front="prologue"]').count(), 0);
+    await r.page.fill('[data-front="halfTitle"]', 'The Gate');
+    await r.page.fill('[data-m="copyright"]', 'Copyright © {year} {author}');
+    await r.page.fill('[data-front="dedication"]', 'For my family');
+    await r.page.click('.pub-tabs [data-tab="matter"]');
+    assert.equal(await r.page.locator('[data-back="epilogue"]').count(), 0);
+    await r.page.fill('[data-back="acknowledgments"]', 'Thanks to everyone.');
+    await r.page.fill('[data-m="about"]', 'Lives by the sea.');
+    await r.page.fill('[data-m="alsoBy"]', 'The Other Door');
+    await r.page.click('.pub-modal .m-ok');
+    assert.deepEqual(await r.page.evaluate(() => book.chapterOrder), ['c1', 'c2']);
+    await r.page.waitForFunction(() => window.__calls.some(call => call[0] === 'writeBookMeta' && call[1].frontMatter?.dedication === 'For my family'));
+    await r.menu({ type: 'export', format: 'epub' });
+    await r.page.waitForFunction(() => window.__exports?.length === 1);
+    const epub = await r.page.evaluate(() => window.__exports[0].zipEntries);
+    const malformed = await r.page.evaluate(() => window.__exports[0].zipEntries
+      .filter(file => /\.(xhtml|opf)$/.test(file.path))
+      .filter(file => new DOMParser().parseFromString(file.content, 'application/xml').querySelector('parsererror'))
+      .map(file => file.path));
+    assert.deepEqual(malformed, []);
+    const entry = name => epub.find(file => file.path === `OEBPS/${name}`)?.content || '';
+    assert.match(entry('matter-halfTitle.xhtml'), /epub:type="halftitlepage"/);
+    assert.match(entry('matter-copyright.xhtml'), /epub:type="copyright-page"/);
+    assert.match(entry('matter-dedication.xhtml'), /epub:type="dedication"/);
+    for (const kind of ['epigraph', 'foreword', 'prologue', 'epilogue']) {
+      assert.equal(entry(`matter-${kind}.xhtml`), '');
+    }
+    assert.match(entry('matter-acknowledgments.xhtml'), /epub:type="acknowledgments"/);
+    assert.match(entry('matter-about.xhtml'), /epub:type="backmatter"/);
+    assert.match(entry('matter-alsoBy.xhtml'), /epub:type="backmatter"/);
+    assert.match(entry('ch7.xhtml'), /epub:type="chapter"/);
+    const spine = entry('content.opf');
+    assert.ok(spine.indexOf('idref="matter-halfTitle"') < spine.indexOf('idref="ch7"'));
+    assert.ok(spine.indexOf('idref="ch7"') < spine.indexOf('idref="matter-acknowledgments"'));
+    await r.menu({ type: 'export', format: 'docx' });
+    await r.page.waitForFunction(() => window.__exports?.length === 2);
+    const docx = await r.page.evaluate(() => window.__exports[1].zipEntries.find(file => file.path === 'word/document.xml').content);
+    assert.ok((docx.match(/<w:pageBreakBefore\/>/g) || []).length >= 6);
+    assert.match(docx, /For my family/);
+    assert.match(docx, /Thanks to everyone/);
+    await r.menu({ type: 'publishingDetails', tab: 'matter' });
+    await r.page.uncheck('[data-include]');
+    await r.page.click('.pub-modal .m-ok');
+    await r.menu({ type: 'export', format: 'txt' });
+    await r.page.waitForFunction(() => window.__exports?.length === 3);
+    const plain = await r.page.evaluate(() => window.__exports[2].content);
+    assert.match(plain, /For my family/);
+    assert.match(plain, /Thanks to everyone/);
+    assert.doesNotMatch(plain, /LIVES BY THE SEA|THE OTHER DOOR|COPYRIGHT/);
+    assert.deepEqual(r.errors, []);
+  } finally { await r.close(); }
+});
+
 test('Compare shows what changed since a version', async (t) => {
   if (needsBrowser(t)) return;
   const r = await openNeo({ init: `

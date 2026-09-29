@@ -1,5 +1,5 @@
 "use strict";
-NeoPlugins.define("palette", { name: "Palette themes", icon: "◐", kind: "Personalization", description: "Give this author a distinct writing-room palette.", settings: ["pluginPalette", "customPalettes"], configureLabel: "Open Palette Studio" }, (ctx) => {
+NeoPlugins.define("palette", { name: "Palette themes", icon: "◐", kind: "Personalization", description: "Give this author a distinct writing-room palette.", settings: ["pluginPalette", "customPalettes", "bodyFont"], configureLabel: "Open Palette Studio" }, (ctx) => {
 const { $, escHtml, toast } = ctx;
 const PALETTE_PRESETS = {
   classic: { name: "Classic gold", bg: "#191919", bgSoft: "#222222", pane: "#202020", paper: "#fbfaf7", ink: "#1c1c1c", accent: "#c9a86a", muted: "#8a8a8a", paperMuted: "#665f54", paperFaint: "#b9b4a8", uiText: "#dddddd", uiTextSoft: "#aaaaaa", line: "#3a3a3a", lineStrong: "#4a4a4a", surface: "#222222", surfaceRaised: "#2a2a26", danger: "#c0392b", dangerMuted: "#9d4d42", resolved: "#625d52", onAccent: "#191919", nightPaper: "#232221", nightInk: "#d6d2c6", nightMuted: "#918b7d", nightFaint: "#5f5b52" },
@@ -24,15 +24,31 @@ function openPaletteStudio() {
   const author = ctx.settings;
   const colors = paletteFor(author);
   const selected = author.pluginPalette || "classic";
+  const selectedFont = author.bodyFont || ctx.selectedFont;
+  const fontChoices = ctx.fontChoices.includes(selectedFont) ? ctx.fontChoices : [...ctx.fontChoices, selectedFont];
+  const fontOptions = fontChoices.map((name) => `<option value="${escHtml(name)}"${selectedFont === name ? ' selected' : ''}>${escHtml(name)}</option>`).join('');
   const customOptions = (author.customPalettes || []).map((p) => `<option value="${p.id}" ${selected === p.id ? "selected" : ""}>${escHtml(p.name)}</option>`).join("");
   const { bd } = ctx.settingsDialog({
     title: "Palette Studio", scope: "This author · " + ctx.authorName, className: "palette-studio-screen", back: ctx.openLibrary, onClose: applyPluginAppearance,
-    content: `<p class="sync-detail">Choosing a palette applies it immediately. Swatch edits are a preview until you save a custom palette; closing discards unsaved edits.</p><div class="palette-studio-controls"><label><span>Active palette</span><select data-studio-palette><option value="classic" ${selected === "classic" ? "selected" : ""}>Classic gold</option><option value="ink" ${selected === "ink" ? "selected" : ""}>Ink blue</option><option value="moss" ${selected === "moss" ? "selected" : ""}>Moss green</option>${customOptions}</select></label><div class="palette-studio-actions"><button data-studio-reset class="palette-reset">Restore default palette</button><button data-delete-palette class="palette-delete" hidden>Delete custom palette</button></div></div><div class="palette-preview"><div class="palette-preview-chrome"><span>NEO</span><span class="preview-flag">● Flag</span></div><div class="palette-preview-pane">Chapters<br><strong>Chapter one</strong></div><div class="palette-preview-page"><small>CHAPTER ONE</small><h3>A page that feels like yours</h3><p>Manuscript ink, quiet details, and placeholders all respond to their own palette roles.</p><em>Write freely…</em><button>Primary action</button></div></div>${paletteStudioGroup("Writing page", "These colors control the paper itself in the normal page view.", ["paper", "ink", "paperMuted", "paperFaint"], colors)}${paletteStudioGroup("Night page", "These replace the page colors when View → Page → Night is active.", ["nightPaper", "nightInk", "nightMuted", "nightFaint"], colors)}${paletteStudioGroup("Writing room", "These paint the window, panes, dialogs, borders, and interface text.", ["bg", "bgSoft", "pane", "surface", "surfaceRaised", "uiText", "uiTextSoft", "muted", "line", "lineStrong"], colors)}${paletteStudioGroup("Signals & actions", "Shared colors for buttons, selection, flags, alerts, and resolved notes.", ["accent", "onAccent", "danger", "dangerMuted", "resolved"], colors)}`,
+    content: `<p class="sync-detail">Choosing a palette applies it immediately. Swatch edits are a preview until you save a custom palette; closing discards unsaved edits.</p><div class="palette-studio-controls"><label><span>Active palette</span><select data-studio-palette><option value="classic" ${selected === "classic" ? "selected" : ""}>Classic gold</option><option value="ink" ${selected === "ink" ? "selected" : ""}>Ink blue</option><option value="moss" ${selected === "moss" ? "selected" : ""}>Moss green</option>${customOptions}</select></label><div class="palette-studio-actions"><button data-studio-reset class="palette-reset">Restore default palette</button><button data-delete-palette class="palette-delete" hidden>Delete custom palette</button></div></div><div class="palette-font-controls"><label><span>Manuscript font</span><select data-studio-font>${fontOptions}</select></label><button class="btn-quiet" data-studio-other-font>Other font…</button></div><div class="palette-preview"><div class="palette-preview-chrome"><span>NEO</span><span class="preview-flag">● Flag</span></div><div class="palette-preview-pane">Chapters<br><strong>Chapter one</strong></div><div class="palette-preview-page"><small>CHAPTER ONE</small><h3>A page that feels like yours</h3><p>Manuscript ink, quiet details, and placeholders all respond to their own palette roles.</p><em>Write freely…</em><button>Primary action</button></div></div>${paletteStudioGroup("Writing page", "These colors control the paper itself in the normal page view.", ["paper", "ink", "paperMuted", "paperFaint"], colors)}${paletteStudioGroup("Night page", "These replace the page colors when View → Page → Night is active.", ["nightPaper", "nightInk", "nightMuted", "nightFaint"], colors)}${paletteStudioGroup("Writing room", "These paint the window, panes, dialogs, borders, and interface text.", ["bg", "bgSoft", "pane", "surface", "surfaceRaised", "uiText", "uiTextSoft", "muted", "line", "lineStrong"], colors)}${paletteStudioGroup("Signals & actions", "Shared colors for buttons, selection, flags, alerts, and resolved notes.", ["accent", "onAccent", "danger", "dangerMuted", "resolved"], colors)}`,
     actions: `<input data-palette-name placeholder="Name this custom palette" maxlength="36"><button data-save-palette class="btn-gold">Save custom palette</button>`
   });
   ctx.own(bd);
   bd.querySelector(".dialog-footer").classList.add("palette-studio-save");
   const preview = bd.querySelector(".palette-preview");
+  const fontPicker = bd.querySelector('[data-studio-font]');
+  const setFont = async (name) => {
+    if (!name) return;
+    author.bodyFont = name;
+    await ctx.saveSettings(author);
+    ctx.applyFont();
+    if (![...fontPicker.options].some(option => option.value === name)) fontPicker.add(new Option(name, name));
+    fontPicker.value = name;
+    preview.style.setProperty('--preview-font', ctx.fontStack(name));
+  };
+  fontPicker.onchange = () => setFont(fontPicker.value);
+  bd.querySelector('[data-studio-other-font]').onclick = async () => setFont(await ctx.pickFont());
+  preview.style.setProperty('--preview-font', ctx.fontStack(selectedFont));
   let draftPalette = false;
   const picker = bd.querySelector("[data-studio-palette]");
   const markDraftPalette = () => {

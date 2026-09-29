@@ -50,12 +50,17 @@ function configurePlugins() {
       const context = {
         $, escHtml, toast,
         get authorName() { return author.name || "Anonymous"; },
-        settings: Object.fromEntries((p.settings || []).map((key) => [key, structuredClone(author[key])])),
+        get settings() { return Object.fromEntries((p.settings || []).map((key) => [key, structuredClone(author[key])])); },
         saveSettings(settings) {
           for (const key of p.settings || []) author[key] = structuredClone(settings[key]);
           return track(() => window.neo.writeLibrary(structuredClone(library)));
         },
         get pageTheme() { return library.pageTheme; },
+        get fontChoices() { return [...BODY_FONT_CHOICES]; },
+        get selectedFont() { return author.bodyFont || library.fonts?.body || 'Georgia'; },
+        fontStack: bodyFontStack,
+        pickFont: pickLocalFont,
+        applyFont: applyFonts,
         get hasBook() { return !!book && (!p.bookScoped || book.id === bookId); },
         bookSnapshot: () => book ? structuredClone(book) : null,
         updateBook(patch) {

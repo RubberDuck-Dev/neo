@@ -203,6 +203,7 @@ async function renderShelves() {
   const view = $("#bookshelf-view");
   const keepScroll = view.scrollTop; // re-rendering must not move the page
   $("#author-chip").textContent = displayAuthor();
+  applyFonts();
   await NeoPlugins.reconcile();
   const wrap = $("#shelves");
   // the new shelves are built off-screen and swapped in whole, so the page

@@ -73,15 +73,13 @@ window.neo.onMenu(async (msg) => {
   if (msg.type === "bodyFontPick") {
     const name = await pickLocalFont();
     if (name) {
-      library.fonts = library.fonts || {};
-      library.fonts.body = name;
+      currentAuthor().bodyFont = name;
       await window.neo.writeLibrary(library);
     }
     applyFonts(); // also undoes a hover preview after Cancel
   }
   if (msg.type === "bodyFont") {
-    library.fonts = library.fonts || {};
-    library.fonts.body = msg.value;
+    currentAuthor().bodyFont = msg.value;
     await window.neo.writeLibrary(library);
     applyFonts();
   }

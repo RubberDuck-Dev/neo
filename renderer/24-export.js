@@ -156,7 +156,7 @@ function buildHtml(data, opts = {}) {
       return html;
     }).join('\n');
     return `
-    <section class="chapter">
+    <section class="${ch.kind ? `matter matter-${ch.kind}` : 'chapter'}"${ch.kind ? ` data-matter-kind="${ch.kind}"` : ''}>
       ${ch.heading ? `<h2>${escHtml(ch.heading)}</h2>` : ''}
       ${paras}
     </section>`;
@@ -172,6 +172,9 @@ function buildHtml(data, opts = {}) {
   .titlepage .sub { font-style: italic; color: #555; }
   .titlepage .auth { margin-top: 40px; letter-spacing: 3px; text-transform: uppercase; font-size: 11pt; }
   .chapter { page-break-before: always; }
+  .matter { page-break-before: always; }
+  .matter h2 { text-align: center; font-size: 14pt; font-weight: normal; margin: 20vh 0 2em; }
+  .matter p { margin: 0 0 1em; text-indent: 0; }
   .chapter h2 { text-align: center; letter-spacing: 4px; text-transform: uppercase; font-size: 12pt; font-weight: normal; color: #555; margin: 60px 0 40px; }
   .chapter p { text-indent: 2em; margin: 0; }
   .chapter h2 + p, .brk + p, .chapter p.first { text-indent: 0; }
@@ -279,6 +282,7 @@ function buildDocxEntries(data) {
     }
     for (const p of ch.paras) {
       if (p.sceneBreak) body.push(docxP([{ text: '***' }], { align: 'center', spaceBefore: 240 }));
+      else if (ch.kind) body.push(docxP(paraRuns(p.html), { align: p.align === 'center' ? 'center' : '' }));
       else if (p.poetry) body.push(docxP(paraRuns(p.html), { align: p.align === 'center' || p.align === 'right' ? p.align : '', poetry: true }));
       else if (p.align === 'center' || p.align === 'right') body.push(docxP(paraRuns(p.html), { align: p.align }));
       else body.push(docxP(paraRuns(p.html), { indent: true }));
@@ -360,7 +364,7 @@ function chapterXhtml(ch, d) {
 <!DOCTYPE html>
 <html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops">
 <head><title>${escXml(ch.heading || d.title)}</title><link rel="stylesheet" type="text/css" href="style.css"/></head>
-<body><section epub:type="chapter">${ch.heading ? `<h1>${escXml(ch.heading)}</h1>` : ""}
+<body><section epub:type="${ch.epubType || 'chapter'}"${ch.kind ? ` class="matter matter-${ch.kind}" data-matter-kind="${ch.kind}"` : ''}>${ch.heading ? `<h1>${escXml(ch.heading)}</h1>` : ""}
 ${paras}
 </section></body></html>`;
 }
@@ -368,6 +372,9 @@ ${paras}
 async function buildEpubEntries(data) {
   const d = data || bookExportData();
   const chapters = d.sections;
+  const itemId = section => section.kind ? `matter-${section.kind}` : `ch${section.num}`;
+  const itemFile = section => `${itemId(section)}.xhtml`;
+  const firstChapter = chapters.find(section => !section.kind);
   const uuid = 'urn:uuid:' + (d.uuid || crypto.randomUUID());
   const modified = new Date().toISOString().replace(/\.\d+Z$/, 'Z');
 
@@ -379,22 +386,22 @@ async function buildEpubEntries(data) {
   const chItems = chapters
     .map(
       (ch) =>
-        `<item id="ch${ch.num}" href="ch${ch.num}.xhtml" media-type="application/xhtml+xml"/>`,
+        `<item id="${itemId(ch)}" href="${itemFile(ch)}" media-type="application/xhtml+xml"/>`,
     )
     .join("\n");
   const chSpine = chapters
-    .map((ch) => `<itemref idref="ch${ch.num}"/>`)
+    .map((ch) => `<itemref idref="${itemId(ch)}"/>`)
     .join("\n");
   const navPoints = chapters
     .map(
       (ch) =>
-        `<li><a href="ch${ch.num}.xhtml">${escXml(ch.heading || d.title)}</a></li>`,
+        `<li><a href="${itemFile(ch)}">${escXml(ch.heading || d.title)}</a></li>`,
     )
     .join("\n");
   const ncxPoints = chapters
     .map(
       (ch) => `
-<navPoint id="ch${ch.num}" playOrder="${ch.num + 1}"><navLabel><text>${escXml(ch.heading || d.title)}</text></navLabel><content src="ch${ch.num}.xhtml"/></navPoint>`,
+<navPoint id="${itemId(ch)}" playOrder="${ch.num + 1}"><navLabel><text>${escXml(ch.heading || d.title)}</text></navLabel><content src="${itemFile(ch)}"/></navPoint>`,
     )
     .join("");
 
@@ -437,7 +444,7 @@ ${chSpine}
 <guide>
 <reference type="cover" title="Cover" href="cover.xhtml"/>
 <reference type="toc" title="Table of Contents" href="nav.xhtml"/>
-<reference type="text" title="Beginning" href="ch1.xhtml"/>
+<reference type="text" title="Beginning" href="${firstChapter ? itemFile(firstChapter) : 'title.xhtml'}"/>
 </guide>
 </package>`,
     },
@@ -481,6 +488,7 @@ p.brk { text-align: center; text-indent: 0; margin: 2.5em 0; letter-spacing: 0.5
 p.poetry { text-indent: 0; margin: 0 2em; }
 p:not(.poetry) + p.poetry, h1 + p.poetry { margin-top: 0.9em; }
 p.poetry + p:not(.poetry) { margin-top: 0.9em; }
+.matter p, .matter p.first { text-indent: 0; margin-bottom: 1em; }
 .titlepage { text-align: center; margin-top: 30%; }
 .titlepage h2 { font-size: 2em; margin: 0; }
 .titlepage .sub { font-style: italic; }
@@ -500,17 +508,17 @@ p.poetry + p:not(.poetry) { margin-top: 0.9em; }
       path: "OEBPS/title.xhtml",
       content: `<?xml version="1.0" encoding="utf-8"?>
 <!DOCTYPE html>
-<html xmlns="http://www.w3.org/1999/xhtml">
+<html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops">
 <head><title>${escXml(d.title)}</title><link rel="stylesheet" type="text/css" href="style.css"/></head>
-<body><div class="titlepage"><h2>${escXml(d.title)}</h2>
+<body><section epub:type="titlepage" class="titlepage"><h2>${escXml(d.title)}</h2>
 ${d.subtitle ? `<p class="sub">${escXml(d.subtitle)}</p>` : ""}
-<p class="auth">${escXml(d.author)}</p></div></body></html>`,
+<p class="auth">${escXml(d.author)}</p></section></body></html>`,
     },
     { path: "OEBPS/" + coverName, content: coverContent, base64: true },
   ];
   for (const ch of chapters) {
     entries.push({
-      path: `OEBPS/ch${ch.num}.xhtml`,
+      path: `OEBPS/${itemFile(ch)}`,
       content: chapterXhtml(ch, d),
     });
   }
@@ -622,7 +630,7 @@ async function doExport(format) {
     const d = bookExportData();
     payload = { format: "docx", defaultName: defaultName + " - manuscript", zipEntries: buildManuscriptDocxEntries(d, { ...author.submission, byline: author.name }) };
   } else {
-    const d = withEndMatter(bookExportData());
+    const d = withBookMatter(bookExportData());
     if (format === "docx")
       payload = { format, defaultName, zipEntries: buildDocxEntries(d) };
     else if (format === "epub")

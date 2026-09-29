@@ -188,6 +188,32 @@ test("palette state changes with authors and Story Map writes only its own metad
   } finally { await r.close(); }
 });
 
+test('Palette Studio and Format share each pen name’s manuscript font', async (t) => {
+  if (!launchable) return t.skip('Chromium not installed');
+  const r = await openNeo({ lib: { authors: [
+    { id: 'a1', name: 'One', plugins: ['palette'] },
+    { id: 'a2', name: 'Two', plugins: ['palette'] }
+  ] } });
+  try {
+    await r.page.evaluate(() => NeoPlugins.call('palette', 'configure'));
+    const options = await r.page.locator('[data-studio-font] option').allTextContents();
+    const chosen = options.find(name => name !== options[0]);
+    await r.page.selectOption('[data-studio-font]', { label: chosen });
+    await r.page.waitForFunction(name => library.authors[0].bodyFont === name, chosen);
+    assert.equal(await r.page.locator('.palette-preview').evaluate(el => el.style.getPropertyValue('--preview-font').includes('Georgia') || !!el.style.getPropertyValue('--preview-font')), true);
+    await r.page.click('.palette-studio-screen .dialog-close');
+    await r.menu({ type: 'bodyFont', value: options[0] });
+    assert.equal(await r.page.evaluate(() => library.authors[0].bodyFont), options[0]);
+    await r.page.evaluate(() => NeoPlugins.call('palette', 'configure'));
+    assert.equal(await r.page.locator('[data-studio-font]').inputValue(), options[0]);
+    await r.page.click('.palette-studio-screen .dialog-close');
+    await r.page.evaluate(() => { library.currentAuthorId = 'a2'; renderShelves(); });
+    await r.page.waitForTimeout(250);
+    assert.equal(await r.page.evaluate(() => currentAuthor().bodyFont || null), null);
+    assert.deepEqual(r.errors, []);
+  } finally { await r.close(); }
+});
+
 test("pending spelling responses cannot repaint after disabling", async (t) => {
   if (skip(t)) return;
   const r = await openNeo({ init: `
